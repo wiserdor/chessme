@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ResultPill } from "@/components/result-pill";
 import { getGameHistory } from "@/lib/services/repository";
 
 export const dynamic = "force-dynamic";
@@ -193,14 +194,15 @@ export default async function GamesHistoryPage(props: {
             history.games.map((game) => (
               <article key={game.id} className="surface-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-display text-2xl">{game.opening}</h3>
+                  <div className="min-w-0 cursor-default">
+                    <h3 className="font-display text-2xl text-[color:var(--text)]">{game.opening}</h3>
                     <p className="mt-1 text-sm text-muted-strong">
                       {game.whitePlayer} vs {game.blackPlayer}
                     </p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted">
-                      {formatGameTime(game.playedAt)} • {game.resultLabel}
-                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted">{formatGameTime(game.playedAt)}</p>
+                      <ResultPill result={game.resultLabel} />
+                    </div>
                   </div>
                   <div className="text-right text-sm text-muted">
                     <p>Biggest swing: {game.biggestSwing} cp</p>
@@ -227,7 +229,7 @@ export default async function GamesHistoryPage(props: {
                   )}
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[color:var(--border)] pt-4">
                   <Link className="btn-primary text-sm" href={`/games/${game.id}`}>
                     Open game review
                   </Link>

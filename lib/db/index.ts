@@ -41,6 +41,14 @@ sqlite.exec(`
     confidence INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS coach_chat_messages (
+    id TEXT PRIMARY KEY,
+    game_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    focus_ply INTEGER,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS ai_configs (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL DEFAULT 'mock',
@@ -208,6 +216,12 @@ try {
 try {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS analysis_jobs (id TEXT PRIMARY KEY, status TEXT NOT NULL, options_json TEXT NOT NULL DEFAULT '{}', total_games INTEGER NOT NULL DEFAULT 0, processed_games INTEGER NOT NULL DEFAULT 0, message TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
+  );
+} catch {}
+
+try {
+  sqlite.exec(
+    "CREATE TABLE IF NOT EXISTS coach_chat_messages (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, focus_ply INTEGER, created_at INTEGER NOT NULL)"
   );
 } catch {}
 

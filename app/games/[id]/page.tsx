@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { GameAIReviewAction } from "@/components/game-ai-review-action";
-import { GameCoachChat } from "@/components/game-coach-chat";
-import { GameReviewBoard } from "@/components/game-review-board";
+import { GameReviewWorkspace } from "@/components/game-review-workspace";
+import { ResultPill } from "@/components/result-pill";
 import { buildGameInsights } from "@/lib/services/game-insights";
 import { getGameDetail } from "@/lib/services/repository";
 
@@ -64,9 +64,12 @@ export default async function GamePage(props: {
           <div>
             <span className="badge">Game review</span>
             <h1 className="mt-3 font-display text-4xl">{detail.game.opening || "Imported game"}</h1>
-            <p className="mt-2 text-sm text-muted">
-              {detail.game.whitePlayer} vs {detail.game.blackPlayer} • {detail.resultLabel}
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
+              <span>
+                {detail.game.whitePlayer} vs {detail.game.blackPlayer}
+              </span>
+              <ResultPill result={detail.resultLabel} />
+            </div>
             <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted">
               Imported game time: {formatGameTime(detail.game.playedAt)}
             </p>
@@ -206,24 +209,20 @@ export default async function GamePage(props: {
           <span className="badge">Replay</span>
           <h2 className="panel-title mt-3">Move-by-move board review</h2>
         </div>
-        <GameReviewBoard
+        <GameReviewWorkspace
+          gameId={detail.game.id}
           moves={detail.positions}
           criticalMoments={criticalMoments}
           initialPly={selectedPly}
           orientation={detail.playerColor === "black" ? "black" : "white"}
           playerColor={detail.playerColor === "black" || detail.playerColor === "white" ? detail.playerColor : undefined}
+          initialMessages={detail.coachChatMessages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            focusPly: message.focusPly
+          }))}
         />
-        <div className="mt-6">
-          <GameCoachChat
-            gameId={detail.game.id}
-            initialFocusPly={selectedPly}
-            criticalMoments={criticalMoments.slice(0, 8).map((moment) => ({
-              ply: moment.ply,
-              label: moment.label,
-              deltaCp: moment.deltaCp
-            }))}
-          />
-        </div>
       </section>
     </main>
   );

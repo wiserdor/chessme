@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 type CriticalMomentOption = {
   ply: number;
@@ -9,8 +9,10 @@ type CriticalMomentOption = {
 };
 
 type Message = {
+  id?: string;
   role: "user" | "coach";
   content: string;
+  focusPly?: number | null;
 };
 
 const SUGGESTIONS = [
@@ -22,16 +24,49 @@ const SUGGESTIONS = [
 
 export function GameCoachChat(props: {
   gameId: string;
-  initialFocusPly?: number;
+  currentFocusPly?: number;
+  onFocusPlyChange?: (ply: number | undefined) => void;
+  focusLabel?: string;
   criticalMoments: CriticalMomentOption[];
+  initialMessages: Message[];
+  sectionId?: string;
 }) {
   const [question, setQuestion] = useState("");
-  const [focusPly, setFocusPly] = useState<number | "">(
-    typeof props.initialFocusPly === "number" ? props.initialFocusPly : props.criticalMoments[0]?.ply ?? ""
-  );
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(props.initialMessages);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [internalFocusPly, setInternalFocusPly] = useState<number | "">(props.criticalMoments[0]?.ply ?? "");
+  const focusPly = typeof props.currentFocusPly === "number" ? props.currentFocusPly : internalFocusPly;
+  const focusOptions = useMemo(() => {
+    const options = props.criticalMoments.map((moment) => ({
+      ply: moment.ply,
+      label: `Ply ${moment.ply} • ${moment.label} • ${moment.deltaCp}cp`
+    }));
+
+    if (
+      typeof props.currentFocusPly === "number" &&
+      !options.some((option) => option.ply === props.currentFocusPly)
+    ) {
+      options.unshift({
+        ply: props.currentFocusPly,
+        label: `Ply ${props.currentFocusPly} • ${props.focusLabel || "Selected move"}`
+      });
+    }
+
+    return options;
+  }, [props.criticalMoments, props.currentFocusPly, props.focusLabel]);
+
+  useEffect(() => {
+    if (typeof props.currentFocusPly === "number") {
+      setInternalFocusPly(props.currentFocusPly);
+    }
+  }, [props.currentFocusPly]);
+
+  function updateFocusPly(next: number | undefined) {
+    const value = typeof next === "number" ? next : "";
+    setInternalFocusPly(value);
+    props.onFocusPlyChange?.(next);
+  }
 
   function submit(nextQuestion: string) {
     setNotice(null);
@@ -42,39 +77,68 @@ export function GameCoachChat(props: {
         return;
       }
 
-      setMessages((current) => [...current, { role: "user", content: trimmed }]);
+      const optimisticKey = `pending-${Date.now()}`;
+      setMessages((current) => [
+        ...current,
+        {
+          id: optimisticKey,
+          role: "user",
+          content: trimmed,
+          focusPly: typeof focusPly === "number" ? focusPly : null
+        }
+      ]);
       setQuestion("");
 
-      const response = await fetch(`/api/games/${props.gameId}/coach-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: trimmed,
-          focusPly: typeof focusPly === "number" ? focusPly : undefined
-        })
-      });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; answer?: string };
+      try {
+        const response = await fetch(`/api/games/${props.gameId}/coach-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: trimmed,
+            focusPly: typeof focusPly === "number" ? focusPly : undefined
+          })
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          answer?: string;
+        };
 
-      if (!response.ok || payload.ok === false || !payload.answer) {
-        setNotice(payload.error || "Could not reach the coach.");
-        return;
+        if (!response.ok || payload.ok === false || !payload.answer) {
+          setMessages((current) => current.filter((message) => message.id !== optimisticKey));
+          setNotice(payload.error || "Could not reach the coach.");
+          return;
+        }
+
+        setMessages((current) => [
+          ...current.filter((message) => message.id !== optimisticKey),
+          {
+            role: "user",
+            content: trimmed,
+            focusPly: typeof focusPly === "number" ? focusPly : null
+          },
+          {
+            role: "coach",
+            content: payload.answer as string,
+            focusPly: typeof focusPly === "number" ? focusPly : null
+          }
+        ]);
+      } catch {
+        setMessages((current) => current.filter((message) => message.id !== optimisticKey));
+        setNotice("Could not reach the coach. Please try again.");
       }
-
-      setMessages((current) => [...current, { role: "coach", content: payload.answer as string }]);
     });
   }
 
   return (
-    <section className="surface-card p-5">
+    <section className="surface-card p-5" id={props.sectionId}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="badge">Coach Chat</span>
-          <h3 className="mt-3 font-display text-2xl">Ask your trainer about this game</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Grounded only in this analyzed game, its critical moments, and your stored coach notes.
-          </p>
+          <h3 className="mt-3 font-display text-xl sm:text-2xl">Ask your trainer about this move</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Grounded only in this analyzed game and the selected position.</p>
         </div>
-        <div className="min-w-[220px]">
+        <div className="w-full min-w-0 sm:w-auto sm:min-w-[220px]">
           <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="coach-focus-ply">
             Focus
           </label>
@@ -84,24 +148,35 @@ export function GameCoachChat(props: {
             value={focusPly}
             onChange={(event) => {
               const value = event.target.value;
-              setFocusPly(value ? Number.parseInt(value, 10) : "");
+              updateFocusPly(value ? Number.parseInt(value, 10) : undefined);
             }}
           >
             <option value="">Whole game</option>
-            {props.criticalMoments.map((moment) => (
-              <option key={moment.ply} value={moment.ply}>
-                Ply {moment.ply} • {moment.label} • {moment.deltaCp}cp
+            {focusOptions.map((option) => (
+              <option key={option.ply} value={option.ply}>
+                {option.label}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      {typeof focusPly === "number" ? (
+        <div className="mt-3 rounded-[16px] border border-sky-500/20 bg-sky-500/10 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+            Coach focus follows the selected move
+          </p>
+          <p className="mt-1 text-sm text-muted-strong">
+            Questions now apply to ply {focusPly}.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {SUGGESTIONS.map((item) => (
           <button
             key={item}
-            className="btn-secondary px-3 py-2 text-xs uppercase tracking-[0.12em]"
+            className="btn-secondary justify-start px-3 py-2 text-left text-xs uppercase tracking-[0.12em]"
             disabled={isPending}
             onClick={() => submit(item)}
             type="button"
@@ -113,38 +188,54 @@ export function GameCoachChat(props: {
 
       <div className="mt-4 space-y-3">
         {messages.length ? (
-          <div className="scroll-panel max-h-[360px] space-y-3 overflow-y-auto pr-1">
+          <div className="scroll-panel max-h-[280px] space-y-3 overflow-y-auto pr-1">
             {messages.map((message, index) => (
               <div
-                key={`${message.role}-${index}`}
-                className={`rounded-[20px] px-4 py-3 text-sm leading-6 ${
-                  message.role === "user"
-                    ? "border border-[color:var(--border)] bg-[color:var(--panel-soft)]"
-                    : "border border-sky-500/20 bg-sky-500/10"
-                }`}
+                key={message.id ?? `${message.role}-${index}`}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <p className="text-xs font-semibold uppercase tracking-[0.14em]">
-                  {message.role === "user" ? "You" : "Coach"}
-                </p>
-                <p className="mt-1 whitespace-pre-wrap">{message.content}</p>
+                <div
+                  className={`max-w-[92%] rounded-[20px] px-4 py-3 text-sm leading-6 sm:max-w-[85%] ${
+                    message.role === "user"
+                      ? "border border-[color:var(--border)] bg-[color:var(--panel-soft)]"
+                      : "border border-sky-500/20 bg-sky-500/10"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em]">
+                      {message.role === "user" ? "You" : "Coach"}
+                    </p>
+                    {typeof message.focusPly === "number" ? (
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+                        Ply {message.focusPly}
+                      </p>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap">{message.content}</p>
+                </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="surface-soft rounded-[20px] p-4 text-sm text-muted-strong">
-            Ask about a critical move, your thinking process, or how to train this game’s main mistake.
-          </p>
+          <div className="surface-soft rounded-[20px] p-4 text-sm text-muted-strong">
+            <p className="font-semibold">Ask about the selected move.</p>
+            <p className="mt-2">
+              Good prompts: why it was bad, what you missed, what to think next time, or what training task comes out
+              of this position.
+            </p>
+            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-muted">Your coach thread is saved for this game.</p>
+          </div>
         )}
 
         <form
-          className="space-y-3"
+          className="space-y-3 rounded-[20px] border border-[color:var(--border)] bg-[color:var(--panel-soft)] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             submit(question);
           }}
           >
-            <textarea
-            className="field-area min-h-28 rounded-[20px]"
+          <textarea
+            className="field-area min-h-24 rounded-[20px]"
             placeholder="Ask the coach about this game..."
             value={question}
             onChange={(event) => setQuestion(event.target.value)}

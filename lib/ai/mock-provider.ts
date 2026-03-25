@@ -1,4 +1,5 @@
 import {
+  CoachLabChatInput,
   GameCoachChatInput,
   GameAIInsights,
   LeakExampleExplanation,
@@ -57,18 +58,41 @@ export class MockProvider implements LLMProvider {
   async answerGameCoachQuestion(input: GameCoachChatInput): Promise<string> {
     const focus =
       input.focusPly !== undefined ? input.criticalMoments.find((moment) => moment.ply === input.focusPly) : input.criticalMoments[0];
+    const priorCoachMessage = [...input.history].reverse().find((message) => message.role === "coach");
 
     return [
       focus
         ? `At ply ${focus.ply}, ${focus.playedMove} was critical because ${focus.bestMove} kept more control and your move gave up about ${focus.deltaCp} centipawns.`
         : `In ${input.opening}, your main issue was not checking the most forcing continuation before moving.`,
+      priorCoachMessage ? `Building on the earlier coach note: ${priorCoachMessage.content}` : null,
       focus?.whatToThink
         ? `Next time think: ${focus.whatToThink}`
         : "Next time ask what the opponent threatens before calculating your own idea.",
       focus?.trainingFocus
         ? `Training: ${focus.trainingFocus}`
         : `Training: revisit one critical move from this game and explain the better alternative in your own words.`
-    ].join(" ");
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(" ");
+  }
+
+  async answerCoachLabQuestion(input: CoachLabChatInput): Promise<string> {
+    const focus = input.focusArea || input.focusOfWeek?.label || input.blindspots[0]?.label || "your main leak";
+    const primaryBlindspot = input.blindspots[0];
+    const priorCoachMessage = [...input.history].reverse().find((message) => message.role === "coach");
+
+    return [
+      `Your coach-lab focus right now is ${focus}.`,
+      primaryBlindspot
+        ? `${primaryBlindspot.label} is hurting because it appears ${primaryBlindspot.count} times with about ${primaryBlindspot.averageSwing}cp average damage. ${primaryBlindspot.whyItHurts}`
+        : "You need a clearer recurring pattern from analyzed games before the coach can be more specific.",
+      input.focusOfWeek ? `Main rule: ${input.focusOfWeek.rule}` : null,
+      input.trend?.summary ? `Trend: ${input.trend.summary}` : null,
+      priorCoachMessage ? `Building on the earlier coach answer: ${priorCoachMessage.content}` : null,
+      "Next step: review one linked example, then do a short training block on that exact pattern."
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(" ");
   }
 
   async generatePortfolioReview(input: PortfolioReviewInput): Promise<PortfolioReview> {

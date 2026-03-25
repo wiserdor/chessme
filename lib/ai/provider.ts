@@ -140,7 +140,49 @@ export interface GameCoachChatInput {
     whatToThink?: string;
     trainingFocus?: string;
   }>;
+  history: Array<{
+    role: "user" | "coach";
+    content: string;
+    focusPly?: number | null;
+  }>;
   focusPly?: number;
+}
+
+export interface CoachLabChatInput {
+  question: string;
+  focusArea?: string;
+  sampleSize: number;
+  focusOfWeek?: {
+    label: string;
+    rule: string;
+    whyItHurts: string;
+  } | null;
+  reminders: string[];
+  blindspots: Array<{
+    label: string;
+    count: number;
+    averageSwing: number;
+    rule: string;
+    whyItHurts: string;
+  }>;
+  criticalMoments: Array<{
+    opening: string;
+    ply: number;
+    label: string;
+    deltaCp: number;
+    playedMove: string;
+    bestMove: string;
+  }>;
+  trend?: {
+    summary: string;
+    bullets: string[];
+  } | null;
+  styleReportSummary?: string | null;
+  history: Array<{
+    role: "user" | "coach";
+    content: string;
+    focusArea?: string | null;
+  }>;
 }
 
 export interface LLMProvider {
@@ -149,6 +191,7 @@ export interface LLMProvider {
   generateStructuredReview(input: ReviewPromptInput): Promise<GameAIInsights>;
   generateStructuredReviews(inputs: ReviewPromptInput[]): Promise<GameAIInsights[]>;
   answerGameCoachQuestion(input: GameCoachChatInput): Promise<string>;
+  answerCoachLabQuestion(input: CoachLabChatInput): Promise<string>;
   generatePortfolioReview(input: PortfolioReviewInput): Promise<PortfolioReview>;
   generateTrainingCard(input: TrainingPromptInput): Promise<TrainingCardPayload>;
   generateTrainingCards(inputs: TrainingPromptInput[]): Promise<TrainingCardPayload[]>;

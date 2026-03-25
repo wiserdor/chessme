@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
@@ -71,6 +72,10 @@ export function GameReviewBoard(props: {
   moves: MoveRow[];
   criticalMoments?: CriticalMomentRow[];
   initialPly?: number;
+  selectedPly?: number;
+  onSelectPly?: (ply: number) => void;
+  showSelectedDetails?: boolean;
+  sidePanel?: ReactNode;
   orientation?: "white" | "black";
   playerColor?: "white" | "black";
 }) {
@@ -83,10 +88,20 @@ export function GameReviewBoard(props: {
     const found = props.moves.find((move) => move.ply === props.initialPly);
     return found?.ply ?? props.moves[0]?.ply ?? 0;
   }, [props.initialPly, props.moves]);
-  const [selectedPly, setSelectedPly] = useState(initialPly);
+  const [internalSelectedPly, setInternalSelectedPly] = useState(initialPly);
+  const selectedPly = props.selectedPly ?? internalSelectedPly;
+
+  function updateSelectedPly(ply: number) {
+    if (props.selectedPly === undefined) {
+      setInternalSelectedPly(ply);
+    }
+    props.onSelectPly?.(ply);
+  }
 
   useEffect(() => {
-    setSelectedPly(initialPly);
+    if (props.selectedPly === undefined) {
+      setInternalSelectedPly(initialPly);
+    }
   }, [initialPly]);
 
   const visibleMoves = useMemo(() => {
@@ -103,7 +118,7 @@ export function GameReviewBoard(props: {
     }
 
     if (!visibleMoves.some((move) => move.ply === selectedPly)) {
-      setSelectedPly(visibleMoves[0]!.ply);
+      updateSelectedPly(visibleMoves[0]!.ply);
     }
   }, [selectedPly, visibleMoves]);
 
@@ -124,36 +139,65 @@ export function GameReviewBoard(props: {
 
   return (
     <div className="space-y-6">
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(560px,1.25fr)_minmax(340px,0.75fr)]">
-        <div className="board-shell">
-          <Chessboard
-            id="review-board"
-            arePiecesDraggable={false}
-            boardOrientation={props.orientation ?? "white"}
-            position={selected?.fenAfter}
-            customSquareStyles={
-              selectedMoveSquares
-                ? {
-                    [selectedMoveSquares.from]: {
-                      background:
-                        "radial-gradient(circle, rgba(14,165,233,0.38) 0%, rgba(14,165,233,0.22) 55%, rgba(14,165,233,0.1) 100%)",
-                      boxShadow: "inset 0 0 0 3px rgba(3, 105, 161, 0.9)"
-                    },
-                    [selectedMoveSquares.to]: {
-                      background:
-                        "radial-gradient(circle, rgba(245,158,11,0.36) 0%, rgba(245,158,11,0.2) 55%, rgba(245,158,11,0.08) 100%)",
-                      boxShadow: "inset 0 0 0 3px rgba(180, 83, 9, 0.85)"
+      <div
+        className={`grid items-start gap-6 ${
+          props.sidePanel
+            ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]"
+            : "xl:grid-cols-[minmax(560px,1.25fr)_minmax(340px,0.75fr)]"
+        }`}
+      >
+        <div className="min-w-0">
+          <div className="board-shell">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300/80">Board</p>
+                <p className="mt-1 text-sm text-slate-200">
+                  {selected ? `Position after ply ${selected.ply}` : "Replay position"}
+                </p>
+              </div>
+              {selectedMoveSquares ? (
+                <div className="rounded-full bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
+                  {selectedMoveSquares.from.toUpperCase()} → {selectedMoveSquares.to.toUpperCase()}
+                </div>
+              ) : null}
+            </div>
+            <Chessboard
+              id="review-board"
+              arePiecesDraggable={false}
+              boardOrientation={props.orientation ?? "white"}
+              position={selected?.fenAfter}
+              customSquareStyles={
+                selectedMoveSquares
+                  ? {
+                      [selectedMoveSquares.from]: {
+                        background:
+                          "radial-gradient(circle, rgba(14,165,233,0.38) 0%, rgba(14,165,233,0.22) 55%, rgba(14,165,233,0.1) 100%)",
+                        boxShadow: "inset 0 0 0 3px rgba(3, 105, 161, 0.9)"
+                      },
+                      [selectedMoveSquares.to]: {
+                        background:
+                          "radial-gradient(circle, rgba(245,158,11,0.36) 0%, rgba(245,158,11,0.2) 55%, rgba(245,158,11,0.08) 100%)",
+                        boxShadow: "inset 0 0 0 3px rgba(180, 83, 9, 0.85)"
+                      }
                     }
-                  }
-                : undefined
-            }
-          />
+                  : undefined
+              }
+            />
+          </div>
         </div>
 
-        <div className="xl:max-w-[440px] xl:justify-self-end">
-          <div className="surface-soft p-3 xl:sticky xl:top-4">
+        <div
+          className={`min-w-0 ${
+            props.sidePanel ? "space-y-4 xl:sticky xl:top-4" : "xl:max-w-[420px] xl:justify-self-end"
+          }`}
+          id="review-moves"
+        >
+          <div className="surface-card p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Move list</p>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Move list</p>
+                <p className="mt-1 text-sm text-muted-strong">Navigate the game from your decisions first.</p>
+              </div>
               {props.playerColor ? (
                 <div className="inline-flex rounded-full border border-[color:var(--border)] bg-[color:var(--panel-strong)] p-1 shadow-sm">
                   <button
@@ -177,7 +221,7 @@ export function GameReviewBoard(props: {
                 </div>
               ) : null}
             </div>
-            <div className="scroll-panel grid max-h-[560px] gap-2 overflow-auto pr-1">
+            <div className={`scroll-panel grid gap-2 overflow-auto pr-1 ${props.sidePanel ? "max-h-[320px]" : "max-h-[560px]"}`}>
               {visibleMoves.map((move) => (
               (() => {
                 const isPlayerMove = normalizeMoveBy(move.moveBy) === props.playerColor;
@@ -193,8 +237,8 @@ export function GameReviewBoard(props: {
                 return (
                   <button
                     key={move.id}
-                    className={`rounded-[18px] border px-4 py-3 text-left ${baseClass}`}
-                    onClick={() => setSelectedPly(move.ply)}
+                    className={`rounded-[18px] border px-4 py-3 text-left transition ${baseClass}`}
+                    onClick={() => updateSelectedPly(move.ply)}
                     type="button"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -212,18 +256,20 @@ export function GameReviewBoard(props: {
                       </div>
                       <div className="flex items-center gap-2">
                         {criticalByPly.has(move.ply) ? (
-                          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
-                            !
+                          <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-amber-500 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+                            Critical
                           </span>
                         ) : null}
                         {criticalByPly.get(move.ply)?.aiAvailable ? (
-                          <span className="inline-flex h-6 min-w-8 shrink-0 items-center justify-center rounded-full bg-sky-600 px-2 text-[10px] font-bold text-white">
+                          <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-sky-600 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
                             AI
                           </span>
                         ) : null}
                       </div>
                     </div>
-                    <p className="mt-2 text-xs uppercase tracking-[0.14em] text-muted">{move.tags.join(" • ")}</p>
+                    {move.tags.length ? (
+                      <p className="mt-2 text-xs uppercase tracking-[0.14em] text-muted">{move.tags.join(" • ")}</p>
+                    ) : null}
                     {criticalByPly.get(move.ply)?.aiAvailable ? (
                       <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">AI lesson available</p>
                     ) : null}
@@ -233,9 +279,12 @@ export function GameReviewBoard(props: {
               ))}
             </div>
           </div>
+
+          {props.sidePanel ? <div className="min-w-0">{props.sidePanel}</div> : null}
         </div>
       </div>
 
+      {props.showSelectedDetails === false ? null : (
       <div className="surface-soft p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -311,6 +360,7 @@ export function GameReviewBoard(props: {
           </div>
         ) : null}
       </div>
+      )}
     </div>
   );
 }

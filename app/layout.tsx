@@ -50,15 +50,15 @@ export default function RootLayout(props: Readonly<{ children: React.ReactNode }
         </Script>
         <div className="shell">
           <header className="site-header">
-            <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+            <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-5">
               <div className="space-y-4">
-                <Link className="flex items-center gap-4 font-display text-3xl" href="/">
-                  <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] panel-contrast shadow-card">
-                    <BrandKnightIcon className="h-8 w-8" />
+                <Link className="flex items-center gap-3 font-display text-2xl sm:gap-4 sm:text-3xl" href="/">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-[18px] panel-contrast shadow-card sm:h-14 sm:w-14 sm:rounded-[20px]">
+                    <BrandKnightIcon className="h-7 w-7 sm:h-8 sm:w-8" />
                   </span>
                   <span>
                     ChessMe
-                    <span className="mt-1 block text-sm font-body font-semibold tracking-[0.12em] text-muted">
+                    <span className="mt-1 block text-xs font-body font-semibold tracking-[0.12em] text-muted sm:text-sm">
                       Personal trainer from your own games
                     </span>
                   </span>

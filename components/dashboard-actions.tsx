@@ -322,13 +322,13 @@ export function DashboardActions(props: {
 
   return (
     <section className="panel space-y-5">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="badge">Control Room</span>
           <h2 className="panel-title mt-3">Sync and analyze</h2>
         </div>
         <button
-          className="btn-secondary px-5 py-3 text-sm"
+          className="btn-secondary w-full px-5 py-3 text-sm sm:w-auto"
           disabled={isPending || isAnalyzingInBackground}
           onClick={() =>
             runAction(async () => {
@@ -369,7 +369,7 @@ export function DashboardActions(props: {
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-3">
         <form
           className="surface-soft p-4"
           onSubmit={(event) => {
@@ -394,7 +394,7 @@ export function DashboardActions(props: {
             value={username}
             onChange={(event) => setUsername(event.target.value)}
           />
-          <button className="btn-primary mt-4" disabled={isPending}>
+          <button className="btn-primary mt-4 w-full sm:w-auto" disabled={isPending}>
             Save profile
           </button>
         </form>
@@ -469,15 +469,15 @@ export function DashboardActions(props: {
               Sent to API as `YYYY/MM`. Select "All available" to sync every published archive month.
             </p>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
               disabled={isPending || isAnalyzingInBackground}
             >
               {isPending || isAnalyzingInBackground ? "Analysis in progress" : "Sync + Analyze"}
             </button>
             <button
-              className="btn-secondary"
+              className="btn-secondary w-full sm:w-auto"
               disabled={isPending || isAnalyzingInBackground}
               onClick={(event) => {
                 event.preventDefault();
@@ -516,7 +516,7 @@ export function DashboardActions(props: {
             value={pgnText}
             onChange={(event) => setPgnText(event.target.value)}
           />
-          <button className="btn-secondary mt-4" disabled={isPending}>
+          <button className="btn-secondary mt-4 w-full sm:w-auto" disabled={isPending}>
             Import PGN
           </button>
         </form>

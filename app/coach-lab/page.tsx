@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CoachLabChat } from "@/components/coach-lab-chat";
 import { RecentReportAction } from "@/components/recent-report-action";
 import { getRecentGamesPortfolioReport } from "@/lib/services/ai-enrichment";
 import { loadCoachLab } from "@/lib/services/coach-lab";
@@ -136,6 +137,16 @@ export default async function CoachLabPage() {
     getRecentGamesPortfolioReport()
   ]);
   const trend = buildTrendSnapshot(trendSample);
+  const coachChatFocusOptions = [
+    { value: "", label: "Whole coach page" },
+    ...(snapshot.focusOfWeek ? [{ value: snapshot.focusOfWeek.label, label: `Focus: ${snapshot.focusOfWeek.label}` }] : []),
+    ...snapshot.blindspots.map((blindspot) => ({
+      value: blindspot.label,
+      label: `Blindspot: ${blindspot.label}`
+    })),
+    { value: "Trend", label: "Trend" },
+    { value: "Style report", label: "Style report" }
+  ];
 
   return (
     <main className="space-y-6">
@@ -151,13 +162,13 @@ export default async function CoachLabPage() {
               train before the next session.
             </p>
           </div>
-          <div className="space-y-3 text-right">
+          <div className="w-full space-y-3 text-left sm:w-auto sm:text-right">
             <p className="text-sm text-muted">Recent analyzed sample: {snapshot.sampleSize} games</p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Link className="btn-secondary text-sm" href="/training">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <Link className="btn-secondary w-full text-sm sm:w-auto" href="/training">
                 Open training
               </Link>
-              <Link className="btn-secondary text-sm" href="/games">
+              <Link className="btn-secondary w-full text-sm sm:w-auto" href="/games">
                 Open all games
               </Link>
             </div>
@@ -170,6 +181,14 @@ export default async function CoachLabPage() {
             <h2 className="mt-3 font-display text-3xl">{snapshot.focusOfWeek.label}</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 opacity-85">{snapshot.focusOfWeek.whyItHurts}</p>
             <p className="mt-4 rounded-[18px] bg-white/10 px-4 py-3 text-sm">{snapshot.focusOfWeek.rule}</p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <Link className="btn-secondary w-full text-sm sm:w-auto" href={snapshot.focusOfWeek.href}>
+                Open leak guide
+              </Link>
+              <Link className="btn-primary w-full text-sm sm:w-auto" href="/training">
+                Train this focus
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="surface-soft p-5 text-sm text-muted-strong">
@@ -177,6 +196,8 @@ export default async function CoachLabPage() {
           </div>
         )}
       </section>
+
+      <CoachLabChat focusOptions={coachChatFocusOptions} />
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <article className="panel">
@@ -223,13 +244,24 @@ export default async function CoachLabPage() {
                 <p className="mt-4 rounded-[18px] bg-white/60 px-4 py-3 text-sm text-muted-strong">{blindspot.rule}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {blindspot.examples.map((example) => (
-                    <span
-                      key={`${blindspot.key}-${example}`}
-                      className="rounded-full border border-[color:var(--border)] bg-[color:var(--panel-strong)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em]"
+                    <Link
+                      key={`${blindspot.key}-${example.label}`}
+                      href={example.href}
+                      className="rounded-full border border-[color:var(--border)] bg-[color:var(--panel-strong)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] hover:translate-y-[-1px]"
                     >
-                      {example}
-                    </span>
+                      {example.label}
+                    </Link>
                   ))}
+                </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Link className="btn-secondary w-full text-sm sm:w-auto" href={blindspot.href}>
+                    Open leak guide
+                  </Link>
+                  {blindspot.examples[0] ? (
+                    <Link className="btn-primary w-full text-sm sm:w-auto" href={blindspot.examples[0].href}>
+                      Review example
+                    </Link>
+                  ) : null}
                 </div>
               </article>
             ))
@@ -251,7 +283,7 @@ export default async function CoachLabPage() {
               plan.
             </p>
           </div>
-          <div className="space-y-3 text-right">
+          <div className="w-full space-y-3 text-left sm:w-auto sm:text-right">
             <p className="text-sm text-muted">Analyzed games available: {reportSample.sampleSize}</p>
             <RecentReportAction hasReport={Boolean(report?.payload)} gamesAvailable={reportSample.sampleSize} />
           </div>
@@ -263,6 +295,30 @@ export default async function CoachLabPage() {
           <StatCard label="Losses" value={reportSample.results.loss} tone="tone-danger" />
           <StatCard label="Draws" value={reportSample.results.draw} tone="tone-warning" />
         </div>
+
+        {reportSample.leakLabels.length ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {reportSample.leakLabels.map((leak) => (
+              <Link
+                key={leak.label}
+                className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700"
+                href={
+                  leak.label === "Opening leaks"
+                    ? "/leaks/opening-leaks"
+                    : leak.label === "Tactical oversights"
+                      ? "/leaks/tactical-oversights"
+                      : leak.label === "Large blunders"
+                        ? "/leaks/large-blunders"
+                        : leak.label === "Endgame conversion"
+                          ? "/leaks/endgame-conversion"
+                          : "/leaks/decision-drift"
+                }
+              >
+                {leak.label} ({leak.count})
+              </Link>
+            ))}
+          </div>
+        ) : null}
 
         {trend ? (
           <div className="tone-neutral mt-6 p-5">
@@ -354,9 +410,28 @@ export default async function CoachLabPage() {
                       {moment.label} • {moment.deltaCp} cp swing
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link className="btn-primary text-sm" href={moment.href}>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+                    <Link className="btn-primary w-full text-sm sm:w-auto" href={moment.href}>
                       Review position
+                    </Link>
+                    <Link className="btn-secondary w-full text-sm sm:w-auto" href={`${moment.href}#review-coach`}>
+                      Ask coach on position
+                    </Link>
+                    <Link
+                      className="btn-secondary w-full text-sm sm:w-auto"
+                      href={
+                        moment.blindspot === "opening-discipline"
+                          ? "/leaks/opening-leaks"
+                          : moment.blindspot === "endgame-technique"
+                            ? "/leaks/endgame-conversion"
+                            : moment.blindspot === "tactical-awareness"
+                              ? "/leaks/tactical-oversights"
+                              : moment.blindspot === "safety-check"
+                                ? "/leaks/large-blunders"
+                                : "/leaks/decision-drift"
+                      }
+                    >
+                      Related leak guide
                     </Link>
                   </div>
                 </div>

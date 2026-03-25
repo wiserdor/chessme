@@ -16,6 +16,7 @@ type LeakExample = {
   playedMove?: string;
   bestMove?: string;
   label?: string;
+  tags?: string[];
 };
 
 type ExplainedLeakExample = LeakExample & {

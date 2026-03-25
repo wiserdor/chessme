@@ -6,6 +6,7 @@ import {
   aiConfigs,
   analysisJobs,
   aiReports,
+  coachChatMessages,
   criticalMomentNotes,
   engineReviews,
   gameImports,
@@ -399,6 +400,7 @@ export async function clearAICooldown() {
 
 export async function clearAppData(options?: { includeSettings?: boolean }) {
   await db.delete(analysisJobs);
+  await db.delete(coachChatMessages);
   await db.delete(trainingSessions);
   await db.delete(trainingCards);
   await db.delete(engineReviews);
@@ -780,6 +782,50 @@ export async function getExistingGameReviews(gameIds: string[]) {
   );
 }
 
+export async function getCoachChatMessages(gameId: string) {
+  const rows = await db
+    .select()
+    .from(coachChatMessages)
+    .where(eq(coachChatMessages.gameId, gameId))
+    .orderBy(asc(coachChatMessages.createdAt), asc(coachChatMessages.id));
+
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role === "coach" ? ("coach" as const) : ("user" as const),
+    content: row.content,
+    focusPly: row.focusPly,
+    createdAt: row.createdAt
+  }));
+}
+
+export async function appendCoachChatExchange(input: {
+  gameId: string;
+  question: string;
+  answer: string;
+  focusPly?: number;
+}) {
+  const timestamp = nowTs();
+
+  await db.insert(coachChatMessages).values([
+    {
+      id: createId("chat"),
+      gameId: input.gameId,
+      role: "user",
+      content: input.question,
+      focusPly: input.focusPly ?? null,
+      createdAt: timestamp
+    },
+    {
+      id: createId("chat"),
+      gameId: input.gameId,
+      role: "coach",
+      content: input.answer,
+      focusPly: input.focusPly ?? null,
+      createdAt: timestamp + 1
+    }
+  ]);
+}
+
 export async function replaceGameAnalysis(
   gameId: string,
   extractedPositions: Array<{
@@ -1075,6 +1121,11 @@ export async function getGameDetail(gameId: string) {
     .from(criticalMomentNotes)
     .where(eq(criticalMomentNotes.gameId, gameId))
     .orderBy(asc(criticalMomentNotes.ply));
+  const chatRows = await db
+    .select()
+    .from(coachChatMessages)
+    .where(eq(coachChatMessages.gameId, gameId))
+    .orderBy(asc(coachChatMessages.createdAt), asc(coachChatMessages.id));
 
   return {
     game: game[0],
@@ -1123,6 +1174,13 @@ export async function getGameDetail(gameId: string) {
       whatToThink: row.whatToThink,
       trainingFocus: row.trainingFocus,
       confidence: row.confidence / 100
+    })),
+    coachChatMessages: chatRows.map((row) => ({
+      id: row.id,
+      role: row.role === "coach" ? ("coach" as const) : ("user" as const),
+      content: row.content,
+      focusPly: row.focusPly,
+      createdAt: row.createdAt
     }))
   };
 }
@@ -1339,7 +1397,8 @@ export async function getWeaknessDetail(key: string) {
             deltaCp: engineReviews.deltaCp,
             playedMove: engineReviews.playedMove,
             bestMove: engineReviews.bestMove,
-            label: engineReviews.label
+            label: engineReviews.label,
+            tagsJson: engineReviews.tagsJson
           })
           .from(engineReviews)
           .innerJoin(games, eq(engineReviews.gameId, games.id))
@@ -1369,7 +1428,8 @@ export async function getWeaknessDetail(key: string) {
               deltaCp: row.deltaCp,
               playedMove: row.playedMove,
               bestMove: row.bestMove,
-              label: row.label
+              label: row.label,
+              tags: safeJsonParse<string[]>(row.tagsJson, [])
             }))
           : safeJsonParse<string[]>(weakness.examplesJson, []).map((example, index) => ({
               text: example,
@@ -1380,7 +1440,8 @@ export async function getWeaknessDetail(key: string) {
               deltaCp: undefined,
               playedMove: undefined,
               bestMove: undefined,
-              label: undefined
+              label: undefined,
+              tags: []
             }))
     },
     relatedCards: relatedCards.map((card) => ({

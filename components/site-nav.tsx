@@ -36,22 +36,42 @@ export function SiteNav(props: { items: NavLinkItem[] }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-      {props.items.map((item) => {
-        const Icon = iconMap[item.icon];
-        const active = isActivePath(pathname, item.href);
+    <>
+      <nav className="hidden flex-wrap items-center gap-3 text-sm font-semibold sm:flex">
+        {props.items.map((item) => {
+          const Icon = iconMap[item.icon];
+          const active = isActivePath(pathname, item.href);
 
-        return (
-          <Link
-            key={item.href}
-            className={`nav-pill ${active ? "nav-pill-active" : ""}`}
-            href={item.href}
-          >
-            <Icon className="h-4 w-4" />
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
+          return (
+            <Link
+              key={item.href}
+              className={`nav-pill ${active ? "nav-pill-active" : ""}`}
+              href={item.href}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <nav className="mobile-tabbar sm:hidden">
+        {props.items.map((item) => {
+          const Icon = iconMap[item.icon];
+          const active = isActivePath(pathname, item.href);
+
+          return (
+            <Link
+              key={item.href}
+              className={`mobile-tab ${active ? "mobile-tab-active" : ""}`}
+              href={item.href}
+            >
+              <Icon className="h-5 w-5" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }

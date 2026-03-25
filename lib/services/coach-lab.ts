@@ -27,7 +27,11 @@ type BlindspotCard = {
   averageSwing: number;
   rule: string;
   whyItHurts: string;
-  examples: string[];
+  href: string;
+  examples: Array<{
+    label: string;
+    href: string;
+  }>;
 };
 
 export type CoachLabSnapshot = {
@@ -39,8 +43,24 @@ export type CoachLabSnapshot = {
     label: string;
     rule: string;
     whyItHurts: string;
+    href: string;
   } | null;
 };
+
+function leakHrefForBlindspot(key: BlindspotKey) {
+  switch (key) {
+    case "tactical-awareness":
+      return "/leaks/tactical-oversights";
+    case "opening-discipline":
+      return "/leaks/opening-leaks";
+    case "endgame-technique":
+      return "/leaks/endgame-conversion";
+    case "safety-check":
+      return "/leaks/large-blunders";
+    default:
+      return "/leaks/decision-drift";
+  }
+}
 
 function blindspotForMistake(label: string, tags: string[]): BlindspotKey {
   if (label === "opening-leak" || tags.includes("opening")) {
@@ -141,7 +161,10 @@ export async function loadCoachLab(limit = 20): Promise<CoachLabSnapshot> {
     {
       count: number;
       totalSwing: number;
-      examples: string[];
+      examples: Array<{
+        label: string;
+        href: string;
+      }>;
     }
   >();
 
@@ -152,12 +175,15 @@ export async function loadCoachLab(limit = 20): Promise<CoachLabSnapshot> {
       examples: []
     };
     bucket.count += 1;
-    bucket.totalSwing += moment.deltaCp;
-    if (bucket.examples.length < 3) {
-      bucket.examples.push(`${moment.opening} • ply ${moment.ply} • ${moment.deltaCp}cp`);
+      bucket.totalSwing += moment.deltaCp;
+      if (bucket.examples.length < 3) {
+        bucket.examples.push({
+          label: `${moment.opening} • ply ${moment.ply} • ${moment.deltaCp}cp`,
+          href: moment.href
+        });
+      }
+      blindspotBuckets.set(moment.blindspot, bucket);
     }
-    blindspotBuckets.set(moment.blindspot, bucket);
-  }
 
   const blindspots = Array.from(blindspotBuckets.entries())
     .map(([key, bucket]) => {
@@ -169,6 +195,7 @@ export async function loadCoachLab(limit = 20): Promise<CoachLabSnapshot> {
         averageSwing: Math.round(bucket.totalSwing / bucket.count),
         rule: meta.rule,
         whyItHurts: meta.whyItHurts,
+        href: leakHrefForBlindspot(key),
         examples: bucket.examples
       };
     })
@@ -183,7 +210,8 @@ export async function loadCoachLab(limit = 20): Promise<CoachLabSnapshot> {
     ? {
         label: blindspots[0].label,
         rule: blindspots[0].rule,
-        whyItHurts: blindspots[0].whyItHurts
+        whyItHurts: blindspots[0].whyItHurts,
+        href: blindspots[0].href
       }
     : null;
 

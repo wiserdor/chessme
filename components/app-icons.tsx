@@ -116,6 +116,35 @@ export function GameFeedIcon(props: IconProps) {
   );
 }
 
+export function ResultWinIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M7 6.5h10l-1 4.5a5 5 0 0 1-4 3.8V18h3" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+      <path d="M8 20h8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <path d="M7 7.5H5.5A1.5 1.5 0 0 0 4 9v.5A2.5 2.5 0 0 0 6.5 12H8m9-4.5h1.5A1.5 1.5 0 0 1 20 9v.5A2.5 2.5 0 0 1 17.5 12H16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </BaseIcon>
+  );
+}
+
+export function ResultLossIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="7.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </BaseIcon>
+  );
+}
+
+export function ResultDrawIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4.5" y="6" width="6.5" height="12" rx="1.75" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="13" y="6" width="6.5" height="12" rx="1.75" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M13 12h-2" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </BaseIcon>
+  );
+}
+
 export function SunIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

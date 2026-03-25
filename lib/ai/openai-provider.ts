@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 
 import {
+  CoachLabChatInput,
   GameCoachChatInput,
   criticalMomentLearningSchema,
   GameAIInsights,
@@ -278,7 +279,7 @@ export class OpenAIProvider implements LLMProvider {
         {
           role: "system",
           content:
-            "You are a personal chess trainer. Answer only from the supplied analyzed game context. Be practical, specific, improvement-first, and concise. Explain why the move or pattern mattered, what the player likely missed, and what thought process would prevent the same mistake next time. If a focusPly is supplied, center the answer on that moment. Do not invent lines or evaluations beyond the provided facts."
+            "You are a personal chess trainer. Answer only from the supplied analyzed game context and prior coach chat history. Be practical, specific, improvement-first, and concise. Explain why the move or pattern mattered, what the player likely missed, and what thought process would prevent the same mistake next time. If a focusPly is supplied, center the answer on that moment. Build on earlier coach answers instead of repeating them when possible. Do not invent lines or evaluations beyond the provided facts."
         },
         {
           role: "user",
@@ -290,6 +291,30 @@ export class OpenAIProvider implements LLMProvider {
     const text = response.output_text?.trim();
     if (!text) {
       throw new Error("OpenAI returned an empty coach response.");
+    }
+
+    return text;
+  }
+
+  async answerCoachLabQuestion(input: CoachLabChatInput): Promise<string> {
+    const response = await this.client.responses.create({
+      model: this.model,
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a practical personal chess improvement coach. Answer only from the supplied Coach Lab context covering blindspots, focus of week, critical moments, trend, and style report. Be concrete, direct, and improvement-first. Give the player a clear diagnosis, one or two practical next steps, and when useful point them toward training or reviewing a concrete kind of position. Build on prior chat history if present. Do not invent games, lines, or stats beyond the provided context."
+        },
+        {
+          role: "user",
+          content: JSON.stringify(input)
+        }
+      ]
+    });
+
+    const text = response.output_text?.trim();
+    if (!text) {
+      throw new Error("OpenAI returned an empty coach-lab response.");
     }
 
     return text;

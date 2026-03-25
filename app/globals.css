@@ -144,6 +144,7 @@ body {
   color: var(--text);
   letter-spacing: 0;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 a {
@@ -155,11 +156,11 @@ button {
 }
 
 .shell {
-  @apply mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8;
+  @apply mx-auto flex min-h-screen max-w-7xl flex-col gap-5 px-3 py-4 pb-24 sm:gap-8 sm:px-6 sm:py-8 sm:pb-8 lg:px-8;
 }
 
 .panel {
-  @apply rounded-[28px] p-6 backdrop-blur;
+  @apply rounded-[24px] p-4 backdrop-blur sm:rounded-[28px] sm:p-6;
   border: 1px solid var(--border);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -390,7 +391,7 @@ button {
 }
 
 .site-header {
-  @apply relative overflow-hidden rounded-[32px] px-5 py-5 sm:px-6;
+  @apply relative overflow-hidden rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-6 sm:py-5;
   border: 1px solid var(--border);
   background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 96%, transparent 4%) 0%, color-mix(in srgb, var(--panel) 92%, var(--primary) 8%) 100%);
   box-shadow: var(--shadow-lg);
@@ -407,9 +408,36 @@ button {
 }
 
 .board-shell {
-  @apply rounded-[28px] p-4;
+  @apply rounded-[22px] p-3 sm:rounded-[28px] sm:p-4;
   background: linear-gradient(180deg, color-mix(in srgb, var(--board-shell) 96%, white 4%) 0%, var(--board-shell) 100%);
   box-shadow: var(--shadow-md);
+}
+
+.mobile-tabbar {
+  position: fixed;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: color-mix(in srgb, var(--panel-strong) 92%, transparent 8%);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+.mobile-tab {
+  @apply inline-flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-semibold;
+  color: var(--muted);
+}
+
+.mobile-tab-active {
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-strong) 88%);
+  color: var(--primary);
 }
 
 .tone-neutral,
@@ -466,4 +494,19 @@ button {
 
 .scroll-panel::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (max-width: 639px) {
+  .btn-primary,
+  .btn-secondary,
+  .btn-accent,
+  .btn-moss,
+  .btn-danger,
+  .btn-ghost {
+    justify-content: center;
+  }
+
+  .panel-title {
+    font-size: 1.5rem;
+  }
 }

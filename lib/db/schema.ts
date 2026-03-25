@@ -46,6 +46,15 @@ export const criticalMomentNotes = sqliteTable("critical_moment_notes", {
   updatedAt: integer("updated_at").notNull()
 });
 
+export const coachChatMessages = sqliteTable("coach_chat_messages", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull(),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  focusPly: integer("focus_ply"),
+  createdAt: integer("created_at").notNull()
+});
+
 export const gameImports = sqliteTable("game_imports", {
   id: text("id").primaryKey(),
   source: text("source").notNull(),

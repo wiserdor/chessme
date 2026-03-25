@@ -46,11 +46,11 @@ export function DashboardOverview(props: { snapshot: DashboardSnapshot }) {
             <span className="badge">Training</span>
             <h2 className="panel-title mt-3">Next move</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link className="btn-secondary text-sm" href="/coach-lab">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+            <Link className="btn-secondary w-full text-sm sm:w-auto" href="/coach-lab">
               Coach
             </Link>
-            <Link className="btn-primary text-sm" href="/training">
+            <Link className="btn-primary w-full text-sm sm:w-auto" href="/training">
               Open drills
             </Link>
           </div>

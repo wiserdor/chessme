@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { GameFeedIcon, GamesIcon } from "@/components/app-icons";
+import { ResultPill } from "@/components/result-pill";
 import { DashboardSnapshot } from "@/lib/types";
 
 export function RecentGames(props: { snapshot: DashboardSnapshot }) {
@@ -30,9 +31,10 @@ export function RecentGames(props: { snapshot: DashboardSnapshot }) {
                     {game.status}
                   </span>
                 </div>
-                <p className="text-sm text-muted">
-                  {formatPlayedAt(game.playedAt)} • {game.result}
-                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
+                  <span>{formatPlayedAt(game.playedAt)}</span>
+                  <ResultPill compact result={game.result} />
+                </div>
               </div>
               <div className="text-right text-sm text-muted">
                 <p>vs {game.opponent}</p>

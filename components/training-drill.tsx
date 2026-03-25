@@ -106,12 +106,14 @@ export function TrainingDrill(props: { card: Card | null }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="badge">Due drill</span>
-          <h1 className="mt-3 font-display text-4xl">{activeCard.title}</h1>
+          <h1 className="mt-3 font-display text-3xl sm:text-4xl">{activeCard.title}</h1>
           <p className="mt-2 text-sm text-muted">
             Theme: {activeCard.theme} • Difficulty {activeCard.difficulty}
           </p>
         </div>
-        <div className="surface-soft px-4 py-3 text-sm text-muted-strong">{activeCard.hint}</div>
+        <div className="surface-soft w-full px-4 py-3 text-sm text-muted-strong xl:w-auto xl:max-w-[320px]">
+          {activeCard.hint}
+        </div>
       </div>
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(560px,1.2fr)_minmax(320px,0.8fr)]">
@@ -150,7 +152,7 @@ export function TrainingDrill(props: { card: Card | null }) {
               Drag a piece on the board to submit instantly. Promotions from drag default to queen.
             </p>
             <button
-              className="btn-secondary mt-4 text-sm"
+              className="btn-secondary mt-4 w-full text-sm sm:w-auto"
               onClick={() => setShowManualInput((current) => !current)}
               type="button"
             >
@@ -203,7 +205,7 @@ export function TrainingDrill(props: { card: Card | null }) {
                 <option value="5">5 - Certain</option>
               </select>
 
-              <button className="btn-primary mt-5 px-5 py-3" disabled={isPending}>
+              <button className="btn-primary mt-5 w-full px-5 py-3 sm:w-auto" disabled={isPending}>
                 {isPending ? "Checking..." : "Submit answer"}
               </button>
             </form>

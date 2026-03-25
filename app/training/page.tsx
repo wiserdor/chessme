@@ -10,12 +10,12 @@ export default async function TrainingPage() {
 
   return (
     <main className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="badge">Practice</span>
-          <h1 className="mt-3 font-display text-4xl">Daily drill queue</h1>
+          <h1 className="mt-3 font-display text-3xl sm:text-4xl">Daily drill queue</h1>
         </div>
-        <Link className="btn-secondary text-sm" href="/">
+        <Link className="btn-secondary w-full text-sm sm:w-auto" href="/">
           Back to dashboard
         </Link>
       </div>

@@ -1,7 +1,10 @@
 import { createProvider } from "@/lib/ai";
 import { explainLeakExamples } from "@/lib/services/leak-explanations";
+import { loadCoachLab } from "@/lib/services/coach-lab";
 import {
+  appendCoachChatExchange,
   getAISettings,
+  getCoachChatMessages,
   getGameDetail,
   getRecentGamesForPortfolioReview,
   getStoredAIReport,
@@ -211,6 +214,7 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
   }
 
   const criticalNotesByPly = new Map(detail.criticalMomentNotes.map((note) => [note.ply, note]));
+  const savedHistory = await getCoachChatMessages(gameId);
   const playerColor =
     detail.playerColor === "white" || detail.playerColor === "black" ? detail.playerColor : null;
   const criticalMoments = detail.engineReviews.slice(0, 6).map((review) => ({
@@ -235,7 +239,19 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
       playerColor,
       gameSummary: detail.review?.summary ?? null,
       actionItems: detail.review?.actionItems ?? [],
+      history: savedHistory.slice(-12).map((message) => ({
+        role: message.role,
+        content: message.content,
+        focusPly: message.focusPly
+      })),
       criticalMoments,
+      focusPly
+    });
+
+    await appendCoachChatExchange({
+      gameId,
+      question: question.trim(),
+      answer,
       focusPly
     });
 
@@ -243,5 +259,88 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
       answer,
       focusPly: focusPly ?? null
     };
+  });
+}
+
+function buildTrendSnapshot(sample: Awaited<ReturnType<typeof getRecentGamesForPortfolioReview>>) {
+  if (sample.games.length < 6) {
+    return null;
+  }
+
+  const recentSliceSize = Math.max(3, Math.ceil(sample.games.length / 2));
+  const recentGames = sample.games.slice(0, recentSliceSize);
+  const earlierGames = sample.games.slice(recentSliceSize);
+  if (!earlierGames.length) {
+    return null;
+  }
+
+  const avg = (values: number[]) => (values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0);
+  const score = (result: string) => (result.toLowerCase() === "win" ? 1 : result.toLowerCase() === "draw" ? 0.5 : 0);
+  const recentAvgSwing = Math.round(avg(recentGames.map((game) => game.biggestSwing)));
+  const earlierAvgSwing = Math.round(avg(earlierGames.map((game) => game.biggestSwing)));
+  const recentScore = avg(recentGames.map((game) => score(game.result)));
+  const earlierScore = avg(earlierGames.map((game) => score(game.result)));
+
+  return {
+    summary:
+      recentAvgSwing < earlierAvgSwing || recentScore > earlierScore
+        ? "Recent games look a bit better than the earlier half of the sample."
+        : recentAvgSwing > earlierAvgSwing || recentScore < earlierScore
+          ? "Recent games are slipping versus the earlier half of the sample."
+          : "Recent games look mostly flat versus the earlier half of the sample.",
+    bullets: [
+      `Average biggest swing: ${earlierAvgSwing}cp earlier -> ${recentAvgSwing}cp recent`,
+      `Score per game: ${earlierScore.toFixed(2)} earlier -> ${recentScore.toFixed(2)} recent`
+    ]
+  };
+}
+
+export async function answerCoachLabQuestion(
+  question: string,
+  focusArea?: string,
+  history?: Array<{ role: "user" | "coach"; content: string; focusArea?: string | null }>
+) {
+  if (!question.trim()) {
+    throw new Error("Question is required.");
+  }
+
+  const [snapshot, reportSample, report] = await Promise.all([
+    loadCoachLab(20),
+    getRecentGamesForPortfolioReview(20),
+    getStoredAIReport("recent-30")
+  ]);
+
+  if (!snapshot.sampleSize) {
+    throw new Error("Analyze games first before asking the coach about your flows.");
+  }
+
+  return withOpenAIProvider(async (provider) => {
+    const answer = await provider.answerCoachLabQuestion({
+      question: question.trim(),
+      focusArea,
+      sampleSize: snapshot.sampleSize,
+      focusOfWeek: snapshot.focusOfWeek,
+      reminders: snapshot.reminders,
+      blindspots: snapshot.blindspots.map((item) => ({
+        label: item.label,
+        count: item.count,
+        averageSwing: item.averageSwing,
+        rule: item.rule,
+        whyItHurts: item.whyItHurts
+      })),
+      criticalMoments: snapshot.criticalMoments.slice(0, 6).map((moment) => ({
+        opening: moment.opening,
+        ply: moment.ply,
+        label: moment.label,
+        deltaCp: moment.deltaCp,
+        playedMove: moment.playedMove,
+        bestMove: moment.bestMove
+      })),
+      trend: buildTrendSnapshot(reportSample),
+      styleReportSummary: report?.payload?.summary ?? null,
+      history: (history ?? []).slice(-12)
+    });
+
+    return { answer };
   });
 }

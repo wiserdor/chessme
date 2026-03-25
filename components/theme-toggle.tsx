@@ -44,14 +44,14 @@ export function ThemeToggle() {
   return (
     <button
       aria-label={mounted ? `Switch to ${isDark ? "light" : "dark"} theme` : "Toggle theme"}
-      className="theme-toggle"
+      className="theme-toggle self-start sm:self-auto"
       onClick={toggleTheme}
       type="button"
     >
       <span className="theme-toggle-thumb">
         {isDark ? <MoonIcon className="h-4 w-4" /> : <SunIcon className="h-4 w-4" />}
       </span>
-      <span className="theme-toggle-copy">
+      <span className="theme-toggle-copy hidden sm:flex">
         <span>{isDark ? "Dark" : "Light"}</span>
         <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">{isDark ? "Focus" : "Focus"}</span>
       </span>
