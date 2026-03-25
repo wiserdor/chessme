@@ -1,4 +1,5 @@
 export type ProviderName = "openai" | "mock";
+export type NoteAnchorType = "general" | "game" | "move" | "position" | "opening" | "leak" | "coach-flow" | "training-card";
 
 export type MistakeLabel =
   | "inaccuracy"
@@ -128,5 +129,37 @@ export interface DashboardSnapshot {
     opening: string;
     playedAt: string;
     status: string;
+    isFavorite: boolean;
   }>;
+  favoriteGames: Array<{
+    id: string;
+    opponent: string;
+    result: string;
+    opening: string;
+    playedAt: string;
+    status: string;
+  }>;
+}
+
+export interface NoteRecord {
+  id: string;
+  title: string;
+  body: string;
+  manualTags: string[];
+  derivedTags: string[];
+  anchorType: NoteAnchorType;
+  anchorLabel: string;
+  sourcePath: string;
+  gameId?: string | null;
+  ply?: number | null;
+  fen?: string | null;
+  opening?: string | null;
+  leakKey?: string | null;
+  trainingCardId?: string | null;
+  focusArea?: string | null;
+  coachMessageContext?: string | null;
+  href: string;
+  excerpt: string;
+  createdAt: number;
+  updatedAt: number;
 }

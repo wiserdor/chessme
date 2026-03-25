@@ -68,6 +68,7 @@ export class MockProvider implements LLMProvider {
       focus?.whatToThink
         ? `Next time think: ${focus.whatToThink}`
         : "Next time ask what the opponent threatens before calculating your own idea.",
+      input.notes[0] ? `Saved note to reuse: ${input.notes[0].title} - ${input.notes[0].excerpt}` : null,
       focus?.trainingFocus
         ? `Training: ${focus.trainingFocus}`
         : `Training: revisit one critical move from this game and explain the better alternative in your own words.`
@@ -88,6 +89,7 @@ export class MockProvider implements LLMProvider {
         : "You need a clearer recurring pattern from analyzed games before the coach can be more specific.",
       input.focusOfWeek ? `Main rule: ${input.focusOfWeek.rule}` : null,
       input.trend?.summary ? `Trend: ${input.trend.summary}` : null,
+      input.notes[0] ? `One of your saved notes says: ${input.notes[0].title} - ${input.notes[0].excerpt}` : null,
       priorCoachMessage ? `Building on the earlier coach answer: ${priorCoachMessage.content}` : null,
       "Next step: review one linked example, then do a short training block on that exact pattern."
     ]

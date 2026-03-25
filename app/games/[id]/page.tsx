@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { FavoriteGameButton } from "@/components/favorite-game-button";
 import { GameAIReviewAction } from "@/components/game-ai-review-action";
 import { GameReviewWorkspace } from "@/components/game-review-workspace";
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { ResultPill } from "@/components/result-pill";
 import { buildGameInsights } from "@/lib/services/game-insights";
-import { getGameDetail } from "@/lib/services/repository";
+import { getAISettings, getGameDetail } from "@/lib/services/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +36,7 @@ export default async function GamePage(props: {
 }) {
   const params = await props.params;
   const searchParams = props.searchParams ? await props.searchParams : undefined;
-  const detail = await getGameDetail(params.id);
+  const [detail, aiSettings] = await Promise.all([getGameDetail(params.id), getAISettings()]);
 
   if (!detail) {
     notFound();
@@ -73,6 +75,34 @@ export default async function GamePage(props: {
             <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted">
               Imported game time: {formatGameTime(detail.game.playedAt)}
             </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <NoteComposerTrigger
+                buttonLabel="Add game note"
+                buttonClassName="btn-secondary w-full text-sm sm:w-auto"
+                dialogTitle="Save note on this game"
+                context={{
+                  anchorType: "game",
+                  anchorLabel: detail.game.opening || "Game review",
+                  sourcePath: `/games/${detail.game.id}`,
+                  gameId: detail.game.id,
+                  opening: detail.game.opening ?? null
+                }}
+              />
+              {detail.game.opening ? (
+                <NoteComposerTrigger
+                  buttonLabel="Add opening note"
+                  buttonClassName="btn-secondary w-full text-sm sm:w-auto"
+                  dialogTitle="Save opening note"
+                  context={{
+                    anchorType: "opening",
+                    anchorLabel: detail.game.opening,
+                    sourcePath: `/games/${detail.game.id}`,
+                    gameId: detail.game.id,
+                    opening: detail.game.opening
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
           <div className="surface-soft px-5 py-4 text-sm text-muted-strong">
             <p>
@@ -80,11 +110,13 @@ export default async function GamePage(props: {
                 ? `${detail.review.coachSource === "openai" ? "AI coach" : "Engine fallback"} • ${Math.round(detail.review.confidence * 100)}% confidence`
                 : "No coach narrative yet"}
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <FavoriteGameButton gameId={detail.game.id} initialFavorite={Boolean(detail.game.isFavorite)} />
               <GameAIReviewAction
                 gameId={detail.game.id}
                 hasAIReview={detail.review?.coachSource === "openai"}
                 analysisStatus={detail.game.analysisStatus}
+                hasApiKey={aiSettings.hasApiKey}
               />
             </div>
           </div>
@@ -101,13 +133,38 @@ export default async function GamePage(props: {
               </p>
               <p className="mt-3 text-sm leading-6 text-muted-strong">{detail.review.summary}</p>
             </div>
-            <div className="surface-card p-5">
-              <h2 className="font-display text-2xl">Action items</h2>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
-                {detail.review.actionItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
+            <div className="space-y-4">
+              {detail.review.coachingNotes.length ? (
+                <div className="surface-card p-5">
+                  <h2 className="font-display text-2xl">Key lessons</h2>
+                  <ul className="mt-3 space-y-3 text-sm leading-6 text-muted-strong">
+                    {detail.review.coachingNotes.slice(0, 3).map((item) => (
+                      <li key={item} className="rounded-[16px] bg-[color:var(--panel-soft)] px-4 py-3">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {detail.review.actionItems.length ? (
+                <div className="tone-info p-5">
+                  <h2 className="font-display text-2xl">Next game checklist</h2>
+                  <p className="mt-2 text-sm text-muted-strong">
+                    Use these as practical reminders before and during your next game.
+                  </p>
+                  <ul className="mt-3 space-y-3 text-sm leading-6 text-muted-strong">
+                    {detail.review.actionItems.slice(0, 4).map((item, index) => (
+                      <li key={item} className="flex items-start gap-3 rounded-[16px] bg-[color:var(--panel-strong)] px-4 py-3">
+                        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-xs font-bold text-[color:var(--primary-text)]">
+                          {index + 1}
+                        </span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -211,8 +268,10 @@ export default async function GamePage(props: {
         </div>
         <GameReviewWorkspace
           gameId={detail.game.id}
+          opening={detail.game.opening}
           moves={detail.positions}
           criticalMoments={criticalMoments}
+          hasApiKey={aiSettings.hasApiKey}
           initialPly={selectedPly}
           orientation={detail.playerColor === "black" ? "black" : "white"}
           playerColor={detail.playerColor === "black" || detail.playerColor === "white" ? detail.playerColor : undefined}

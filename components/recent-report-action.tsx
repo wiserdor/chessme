@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-export function RecentReportAction(props: { hasReport: boolean; gamesAvailable: number }) {
+export function RecentReportAction(props: { hasReport: boolean; gamesAvailable: number; hasApiKey: boolean }) {
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -12,7 +12,7 @@ export function RecentReportAction(props: { hasReport: boolean; gamesAvailable: 
     <div className="space-y-2">
       <button
         className="btn-primary text-sm"
-        disabled={isPending || props.gamesAvailable === 0}
+        disabled={isPending || props.gamesAvailable === 0 || !props.hasApiKey}
         onClick={() => {
           setNotice(null);
           startTransition(async () => {
@@ -32,9 +32,13 @@ export function RecentReportAction(props: { hasReport: boolean; gamesAvailable: 
         }}
         type="button"
       >
-        {isPending ? "Analyzing..." : props.hasReport ? "Refresh ChatGPT report" : "Analyze with ChatGPT"}
+        {isPending ? "Analyzing..." : !props.hasApiKey ? "Add token for ChatGPT" : props.hasReport ? "Refresh ChatGPT report" : "Analyze with ChatGPT"}
       </button>
-      {notice ? <p className="text-xs text-muted">{notice}</p> : null}
+      {notice || !props.hasApiKey ? (
+        <p className="text-xs text-muted">
+          {notice || "Add your OpenAI token in Settings before generating coach reports."}
+        </p>
+      ) : null}
     </div>
   );
 }

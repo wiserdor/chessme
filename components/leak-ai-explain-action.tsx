@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-export function LeakAIExplainAction(props: { leakKey: string; hasAIExamples: boolean }) {
+export function LeakAIExplainAction(props: { leakKey: string; hasAIExamples: boolean; hasApiKey: boolean }) {
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -12,7 +12,7 @@ export function LeakAIExplainAction(props: { leakKey: string; hasAIExamples: boo
     <div className="space-y-2">
       <button
         className="btn-secondary px-4 py-2 text-xs uppercase tracking-[0.12em]"
-        disabled={isPending}
+        disabled={isPending || !props.hasApiKey}
         onClick={() => {
           setNotice(null);
           startTransition(async () => {
@@ -32,9 +32,11 @@ export function LeakAIExplainAction(props: { leakKey: string; hasAIExamples: boo
         }}
         type="button"
       >
-        {isPending ? "Working..." : props.hasAIExamples ? "Refresh ChatGPT examples" : "Analyze with ChatGPT"}
+        {isPending ? "Working..." : !props.hasApiKey ? "Add token for ChatGPT" : props.hasAIExamples ? "Refresh ChatGPT examples" : "Analyze with ChatGPT"}
       </button>
-      {notice ? <p className="text-xs text-muted">{notice}</p> : null}
+      {notice || !props.hasApiKey ? (
+        <p className="text-xs text-muted">{notice || "Add your OpenAI token in Settings before using ChatGPT on leak pages."}</p>
+      ) : null}
     </div>
   );
 }

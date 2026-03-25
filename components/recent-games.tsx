@@ -1,8 +1,51 @@
 import Link from "next/link";
 
-import { GameFeedIcon, GamesIcon } from "@/components/app-icons";
+import { FavoriteIcon, GameFeedIcon, GamesIcon } from "@/components/app-icons";
 import { ResultPill } from "@/components/result-pill";
 import { DashboardSnapshot } from "@/lib/types";
+
+export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
+  return (
+    <section className="panel">
+      <div>
+        <span className="badge inline-flex items-center gap-2">
+          <FavoriteIcon className="h-3.5 w-3.5" />
+          <span>Favorites</span>
+        </span>
+        <h2 className="panel-title mt-3">Saved games</h2>
+      </div>
+
+      <div className="mt-6 space-y-4">
+        {props.snapshot.favoriteGames.length ? (
+          props.snapshot.favoriteGames.map((game) => (
+            <Link
+              key={game.id}
+              href={`/games/${game.id}`}
+              className="surface-soft flex flex-wrap items-center justify-between gap-4 px-4 py-3 hover:translate-y-[-1px]"
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" />
+                  <p className="font-semibold">{game.opening}</p>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
+                  <span>{formatPlayedAt(game.playedAt)}</span>
+                  <ResultPill compact result={game.result} />
+                </div>
+              </div>
+              <div className="text-right text-sm text-muted">
+                <p>vs {game.opponent}</p>
+                <p className="font-semibold text-[color:var(--primary)]">Quick open</p>
+              </div>
+            </Link>
+          ))
+        ) : (
+          <p className="surface-soft p-5 text-sm text-muted-strong">No favorite games saved yet.</p>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function RecentGames(props: { snapshot: DashboardSnapshot }) {
   return (
@@ -27,6 +70,7 @@ export function RecentGames(props: { snapshot: DashboardSnapshot }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <GamesIcon className="h-4 w-4 text-muted" />
                   <p className="font-semibold">{game.opening}</p>
+                  {game.isFavorite ? <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" /> : null}
                   <span className="rounded-full bg-slate-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                     {game.status}
                   </span>

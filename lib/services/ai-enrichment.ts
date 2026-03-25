@@ -6,6 +6,8 @@ import {
   getAISettings,
   getCoachChatMessages,
   getGameDetail,
+  getRelevantNotesForCoachLab,
+  getRelevantNotesForGameCoach,
   getRecentGamesForPortfolioReview,
   getStoredAIReport,
   getWeaknessDetail,
@@ -60,6 +62,24 @@ function isHardQuotaError(error: unknown): boolean {
   const status = readErrorStatus(error);
   const message = readErrorMessage(error).toLowerCase();
   return status === 429 && /insufficient_quota|exceeded your current quota/.test(message);
+}
+
+function leakKeyFromLabel(label: string) {
+  switch (label) {
+    case "opening-leak":
+      return "opening-leaks";
+    case "endgame-error":
+      return "endgame-conversion";
+    case "missed-tactic":
+      return "tactical-oversights";
+    case "blunder":
+      return "large-blunders";
+    case "mistake":
+    case "inaccuracy":
+      return "decision-drift";
+    default:
+      return null;
+  }
 }
 
 async function withOpenAIProvider<T>(runner: (provider: ReturnType<typeof createProvider>, model: string) => Promise<T>) {
@@ -217,6 +237,13 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
   const savedHistory = await getCoachChatMessages(gameId);
   const playerColor =
     detail.playerColor === "white" || detail.playerColor === "black" ? detail.playerColor : null;
+  const leakKeys = Array.from(
+    new Set(
+      detail.engineReviews
+        .map((review) => leakKeyFromLabel(review.label))
+        .filter((value): value is NonNullable<ReturnType<typeof leakKeyFromLabel>> => value !== null)
+    )
+  );
   const criticalMoments = detail.engineReviews.slice(0, 6).map((review) => ({
     ply: review.ply,
     label: review.label,
@@ -229,6 +256,13 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
     whatToThink: criticalNotesByPly.get(review.ply)?.whatToThink,
     trainingFocus: criticalNotesByPly.get(review.ply)?.trainingFocus
   }));
+  const relevantNotes = await getRelevantNotesForGameCoach({
+    gameId,
+    focusPly,
+    opening: detail.game.opening,
+    leakKeys,
+    limit: 4
+  });
 
   return withOpenAIProvider(async (provider) => {
     const answer = await provider.answerGameCoachQuestion({
@@ -243,6 +277,12 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
         role: message.role,
         content: message.content,
         focusPly: message.focusPly
+      })),
+      notes: relevantNotes.map((note) => ({
+        title: note.title,
+        excerpt: note.excerpt,
+        anchorLabel: note.anchorLabel,
+        tags: [...note.manualTags, ...note.derivedTags]
       })),
       criticalMoments,
       focusPly
@@ -314,6 +354,13 @@ export async function answerCoachLabQuestion(
     throw new Error("Analyze games first before asking the coach about your flows.");
   }
 
+  const relevantNotes = await getRelevantNotesForCoachLab({
+    focusArea,
+    leakKeys: snapshot.blindspots.map((item) => item.key),
+    openings: snapshot.criticalMoments.map((moment) => moment.opening.split("•")[0]?.trim() || moment.opening),
+    limit: 4
+  });
+
   return withOpenAIProvider(async (provider) => {
     const answer = await provider.answerCoachLabQuestion({
       question: question.trim(),
@@ -338,7 +385,13 @@ export async function answerCoachLabQuestion(
       })),
       trend: buildTrendSnapshot(reportSample),
       styleReportSummary: report?.payload?.summary ?? null,
-      history: (history ?? []).slice(-12)
+      history: (history ?? []).slice(-12),
+      notes: relevantNotes.map((note) => ({
+        title: note.title,
+        excerpt: note.excerpt,
+        anchorLabel: note.anchorLabel,
+        tags: [...note.manualTags, ...note.derivedTags]
+      }))
     });
 
     return { answer };

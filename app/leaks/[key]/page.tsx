@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { LeakAIExplainAction } from "@/components/leak-ai-explain-action";
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+import { NotesPanel } from "@/components/notes-panel";
 import { LeakSessionAction } from "@/components/leak-session-action";
 import { explainLeakExamples } from "@/lib/services/leak-explanations";
 import { getLeakPlaybook } from "@/lib/services/leak-playbook";
-import { getWeaknessDetail } from "@/lib/services/repository";
+import { getAISettings, getWeaknessDetail } from "@/lib/services/repository";
 import { buildTacticalOversightsModel } from "@/lib/services/tactical-oversights";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +23,7 @@ function formatDueAt(value: number) {
 
 export default async function LeakDetailPage(props: { params: Promise<{ key: string }> }) {
   const params = await props.params;
-  const detail = await getWeaknessDetail(params.key);
+  const [detail, aiSettings] = await Promise.all([getWeaknessDetail(params.key), getAISettings()]);
   if (!detail) {
     notFound();
   }
@@ -51,8 +53,19 @@ export default async function LeakDetailPage(props: { params: Promise<{ key: str
         </div>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <NoteComposerTrigger
+            buttonLabel="Add leak note"
+            buttonClassName="btn-secondary w-full text-sm sm:w-auto"
+            dialogTitle="Save note on this leak"
+            context={{
+              anchorType: "leak",
+              anchorLabel: playbook.title,
+              sourcePath: `/leaks/${detail.weakness.key}`,
+              leakKey: detail.weakness.key
+            }}
+          />
           <LeakSessionAction leakKey={detail.weakness.key} />
-          <LeakAIExplainAction leakKey={detail.weakness.key} hasAIExamples={aiExplainedCount > 0} />
+          <LeakAIExplainAction leakKey={detail.weakness.key} hasAIExamples={aiExplainedCount > 0} hasApiKey={aiSettings.hasApiKey} />
           <Link className="btn-secondary w-full text-sm sm:w-auto" href="/training">
             Open training queue
           </Link>
@@ -315,6 +328,14 @@ export default async function LeakDetailPage(props: { params: Promise<{ key: str
           <p className="mt-4 text-sm text-muted-strong">No examples stored yet for this leak.</p>
         )}
       </section>
+
+      <NotesPanel
+        title="Your notes on this leak"
+        description="Keep your own reminders, patterns, and correction rules tied to this leak."
+        emptyMessage="No notes saved for this leak yet."
+        searches={[{ leakKey: detail.weakness.key, limit: 6 }]}
+        limit={6}
+      />
     </main>
   );
 }

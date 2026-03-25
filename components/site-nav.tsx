@@ -6,6 +6,7 @@ import {
   CoachIcon,
   DashboardIcon,
   GamesIcon,
+  NotesIcon,
   SettingsIcon,
   TrainingIcon
 } from "@/components/app-icons";
@@ -13,7 +14,7 @@ import {
 type NavLinkItem = {
   href: string;
   label: string;
-  icon: "dashboard" | "games" | "coach" | "training" | "settings";
+  icon: "dashboard" | "games" | "coach" | "training" | "notes" | "settings";
 };
 
 const iconMap = {
@@ -21,6 +22,7 @@ const iconMap = {
   games: GamesIcon,
   coach: CoachIcon,
   training: TrainingIcon,
+  notes: NotesIcon,
   settings: SettingsIcon
 } as const;
 

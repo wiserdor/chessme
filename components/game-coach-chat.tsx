@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+
 type CriticalMomentOption = {
   ply: number;
   label: string;
@@ -24,10 +26,17 @@ const SUGGESTIONS = [
 
 export function GameCoachChat(props: {
   gameId: string;
+  opening?: string;
+  hasApiKey: boolean;
   currentFocusPly?: number;
   onFocusPlyChange?: (ply: number | undefined) => void;
   focusLabel?: string;
   criticalMoments: CriticalMomentOption[];
+  moveContexts: Array<{
+    ply: number;
+    san: string;
+    fenAfter: string;
+  }>;
   initialMessages: Message[];
   sectionId?: string;
 }) {
@@ -55,6 +64,10 @@ export function GameCoachChat(props: {
 
     return options;
   }, [props.criticalMoments, props.currentFocusPly, props.focusLabel]);
+  const moveContextByPly = useMemo(
+    () => new Map(props.moveContexts.map((move) => [move.ply, move])),
+    [props.moveContexts]
+  );
 
   useEffect(() => {
     if (typeof props.currentFocusPly === "number") {
@@ -177,7 +190,7 @@ export function GameCoachChat(props: {
           <button
             key={item}
             className="btn-secondary justify-start px-3 py-2 text-left text-xs uppercase tracking-[0.12em]"
-            disabled={isPending}
+            disabled={isPending || !props.hasApiKey}
             onClick={() => submit(item)}
             type="button"
           >
@@ -212,6 +225,32 @@ export function GameCoachChat(props: {
                     ) : null}
                   </div>
                   <p className="mt-2 whitespace-pre-wrap">{message.content}</p>
+                  {message.role === "coach" ? (
+                    <div className="mt-3 flex justify-end">
+                      <NoteComposerTrigger
+                        buttonLabel="Save as note"
+                        buttonClassName="btn-ghost px-3 py-2 text-[11px] uppercase tracking-[0.12em]"
+                        dialogTitle="Save coach answer as note"
+                        initialBody={message.content}
+                        context={{
+                          anchorType: typeof message.focusPly === "number" ? "move" : "game",
+                          anchorLabel:
+                            typeof message.focusPly === "number"
+                              ? `Ply ${message.focusPly} • ${moveContextByPly.get(message.focusPly)?.san || "Coach lesson"}`
+                              : props.opening || "Game coach note",
+                          sourcePath:
+                            typeof message.focusPly === "number"
+                              ? `/games/${props.gameId}?ply=${message.focusPly}#review-coach`
+                              : `/games/${props.gameId}#review-coach`,
+                          gameId: props.gameId,
+                          ply: typeof message.focusPly === "number" ? message.focusPly : undefined,
+                          fen: typeof message.focusPly === "number" ? moveContextByPly.get(message.focusPly)?.fenAfter : undefined,
+                          opening: props.opening,
+                          coachMessageContext: "game-coach"
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -233,17 +272,22 @@ export function GameCoachChat(props: {
             event.preventDefault();
             submit(question);
           }}
-          >
+        >
           <textarea
             className="field-area min-h-24 rounded-[20px]"
-            placeholder="Ask the coach about this game..."
+            placeholder={props.hasApiKey ? "Ask the coach about this game..." : "Add your OpenAI token in Settings to enable coach chat..."}
+            disabled={!props.hasApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {notice ? <p className="text-xs text-muted">{notice}</p> : <span />}
-            <button className="btn-primary text-sm" disabled={isPending} type="submit">
-              {isPending ? "Thinking..." : "Ask coach"}
+            {notice || !props.hasApiKey ? (
+              <p className="text-xs text-muted">{notice || "Coach AI is disabled until you add a token in Settings."}</p>
+            ) : (
+              <span />
+            )}
+            <button className="btn-primary text-sm" disabled={isPending || !props.hasApiKey} type="submit">
+              {isPending ? "Thinking..." : !props.hasApiKey ? "Add token for coach AI" : "Ask coach"}
             </button>
           </div>
         </form>

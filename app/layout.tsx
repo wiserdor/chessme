@@ -31,6 +31,7 @@ export default function RootLayout(props: Readonly<{ children: React.ReactNode }
     { href: "/games", label: "Games", icon: "games" as const },
     { href: "/coach-lab", label: "Coach", icon: "coach" as const },
     { href: "/training", label: "Training", icon: "training" as const },
+    { href: "/notes", label: "Notes", icon: "notes" as const },
     { href: "/settings", label: "Settings", icon: "settings" as const }
   ];
 

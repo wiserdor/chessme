@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, lte, or } from "drizzle-orm";
 import { Chess } from "chess.js";
 
-import { db } from "@/lib/db";
+import { db, sqlite } from "@/lib/db";
 import {
   aiConfigs,
   analysisJobs,
@@ -13,6 +13,7 @@ import {
   gameReviews,
   games,
   leakExampleNotes,
+  notes,
   positions,
   profiles,
   trainingCards,
@@ -24,12 +25,23 @@ import {
   DashboardSnapshot,
   EngineReview,
   ImportedGame,
+  NoteAnchorType,
+  NoteRecord,
   PortfolioReview,
   ProviderName,
   ReviewNarrative,
   TrainingCardPayload,
   WeaknessPatternInput
 } from "@/lib/types";
+import {
+  buildDerivedTags,
+  buildNoteExcerpt,
+  buildNoteHref,
+  buildNoteTitle,
+  dedupeTags,
+  scoreNoteForCoachLabContext,
+  scoreNoteForGameContext
+} from "@/lib/services/notes";
 import { createId } from "@/lib/utils/id";
 import { safeJsonParse } from "@/lib/utils/json";
 import { daysFromNow, nowTs } from "@/lib/utils/time";
@@ -236,6 +248,98 @@ function resultLabelFromBucket(bucket: "win" | "loss" | "draw" | "unknown") {
   }
 }
 
+function leakLabelFromKey(key?: string | null) {
+  switch (key) {
+    case "opening-leaks":
+      return "Opening leaks";
+    case "tactical-oversights":
+      return "Tactical oversights";
+    case "large-blunders":
+      return "Large blunders";
+    case "endgame-conversion":
+      return "Endgame conversion";
+    case "decision-drift":
+      return "Decision drift";
+    default:
+      return "";
+  }
+}
+
+function mapNoteRow(row: typeof notes.$inferSelect): NoteRecord {
+  const manualTags = safeJsonParse<string[]>(row.manualTagsJson, []);
+  const derivedTags = safeJsonParse<string[]>(row.derivedTagsJson, []);
+
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    manualTags,
+    derivedTags,
+    anchorType: row.anchorType as NoteAnchorType,
+    anchorLabel: row.anchorLabel,
+    sourcePath: row.sourcePath,
+    gameId: row.gameId,
+    ply: row.ply,
+    fen: row.fen,
+    opening: row.opening,
+    leakKey: row.leakKey,
+    trainingCardId: row.trainingCardId,
+    focusArea: row.focusArea,
+    coachMessageContext: row.coachMessageContext,
+    href: buildNoteHref({
+      anchorType: row.anchorType as NoteAnchorType,
+      sourcePath: row.sourcePath,
+      gameId: row.gameId,
+      ply: row.ply,
+      leakKey: row.leakKey
+    }),
+    excerpt: buildNoteExcerpt(row.body),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function upsertNoteSearchRow(row: {
+  id: string;
+  title: string;
+  body: string;
+  manualTags: string[];
+  derivedTags: string[];
+  anchorLabel: string;
+  opening?: string | null;
+  leakKey?: string | null;
+}) {
+  sqlite.prepare("DELETE FROM notes_search WHERE note_id = ?").run(row.id);
+  sqlite
+    .prepare(
+      "INSERT INTO notes_search (note_id, title, body, manual_tags, derived_tags, anchor_label, opening, leak_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .run(
+      row.id,
+      row.title,
+      row.body,
+      row.manualTags.join(" "),
+      row.derivedTags.join(" "),
+      row.anchorLabel,
+      row.opening || "",
+      leakLabelFromKey(row.leakKey)
+    );
+}
+
+function deleteNoteSearchRow(noteId: string) {
+  sqlite.prepare("DELETE FROM notes_search WHERE note_id = ?").run(noteId);
+}
+
+function escapeFtsQuery(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.replace(/"/g, '""'))
+    .filter(Boolean)
+    .map((token) => `"${token}"*`)
+    .join(" ");
+}
+
 export async function upsertProfile(username: string, provider: string, model: string) {
   const existing = await db.select().from(profiles).limit(1);
   const timestamp = nowTs();
@@ -401,6 +505,7 @@ export async function clearAICooldown() {
 export async function clearAppData(options?: { includeSettings?: boolean }) {
   await db.delete(analysisJobs);
   await db.delete(coachChatMessages);
+  await db.delete(notes);
   await db.delete(trainingSessions);
   await db.delete(trainingCards);
   await db.delete(engineReviews);
@@ -411,6 +516,7 @@ export async function clearAppData(options?: { includeSettings?: boolean }) {
   await db.delete(gameImports);
   await db.delete(leakExampleNotes);
   await db.delete(games);
+  sqlite.prepare("DELETE FROM notes_search").run();
 
   if (options?.includeSettings) {
     await db.delete(profiles);
@@ -421,6 +527,279 @@ export async function clearAppData(options?: { includeSettings?: boolean }) {
     cleared: true,
     includeSettings: Boolean(options?.includeSettings)
   };
+}
+
+export async function createNote(input: {
+  title?: string | null;
+  body: string;
+  manualTags?: string[];
+  anchorType: NoteAnchorType;
+  anchorLabel?: string | null;
+  sourcePath: string;
+  gameId?: string | null;
+  ply?: number | null;
+  fen?: string | null;
+  opening?: string | null;
+  leakKey?: string | null;
+  trainingCardId?: string | null;
+  focusArea?: string | null;
+  coachMessageContext?: string | null;
+}) {
+  const timestamp = nowTs();
+  const manualTags = dedupeTags(input.manualTags ?? []);
+  const derivedTags = buildDerivedTags(input);
+  const title = buildNoteTitle({
+    title: input.title,
+    body: input.body,
+    anchorType: input.anchorType,
+    anchorLabel: input.anchorLabel,
+    opening: input.opening,
+    leakKey: input.leakKey,
+    focusArea: input.focusArea
+  });
+
+  const row = {
+    id: createId("note"),
+    title,
+    body: input.body.trim(),
+    manualTagsJson: JSON.stringify(manualTags),
+    derivedTagsJson: JSON.stringify(derivedTags),
+    anchorType: input.anchorType,
+    anchorLabel: input.anchorLabel?.trim() || title,
+    sourcePath: input.sourcePath,
+    gameId: input.gameId ?? null,
+    ply: input.ply ?? null,
+    fen: input.fen ?? null,
+    opening: input.opening ?? null,
+    leakKey: input.leakKey ?? null,
+    trainingCardId: input.trainingCardId ?? null,
+    focusArea: input.focusArea ?? null,
+    coachMessageContext: input.coachMessageContext ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies typeof notes.$inferInsert;
+
+  await db.insert(notes).values(row);
+  upsertNoteSearchRow({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    manualTags,
+    derivedTags,
+    anchorLabel: row.anchorLabel,
+    opening: row.opening,
+    leakKey: row.leakKey
+  });
+
+  return mapNoteRow(row);
+}
+
+export async function updateNote(noteId: string, input: { title?: string | null; body: string; manualTags?: string[] }) {
+  const currentRows = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  const current = currentRows[0];
+  if (!current) {
+    throw new Error("Note not found.");
+  }
+
+  const manualTags = dedupeTags(input.manualTags ?? []);
+  const derivedTags = safeJsonParse<string[]>(current.derivedTagsJson, []);
+  const title = buildNoteTitle({
+    title: input.title,
+    body: input.body,
+    anchorType: current.anchorType as NoteAnchorType,
+    anchorLabel: current.anchorLabel,
+    opening: current.opening,
+    leakKey: current.leakKey,
+    focusArea: current.focusArea
+  });
+
+  await db
+    .update(notes)
+    .set({
+      title,
+      body: input.body.trim(),
+      manualTagsJson: JSON.stringify(manualTags),
+      updatedAt: nowTs()
+    })
+    .where(eq(notes.id, noteId));
+
+  upsertNoteSearchRow({
+    id: current.id,
+    title,
+    body: input.body.trim(),
+    manualTags,
+    derivedTags,
+    anchorLabel: current.anchorLabel,
+    opening: current.opening,
+    leakKey: current.leakKey
+  });
+
+  const refreshedRows = await db.select().from(notes).where(eq(notes.id, noteId)).limit(1);
+  return mapNoteRow(refreshedRows[0]!);
+}
+
+export async function deleteNote(noteId: string) {
+  await db.delete(notes).where(eq(notes.id, noteId));
+  deleteNoteSearchRow(noteId);
+}
+
+export async function getNotesFilterOptions() {
+  const rows = await db.select().from(notes).orderBy(desc(notes.updatedAt));
+  const mapped = rows.map(mapNoteRow);
+
+  return {
+    tags: Array.from(new Set(mapped.flatMap((note) => note.manualTags))).sort((left, right) => left.localeCompare(right)),
+    openings: Array.from(new Set(mapped.map((note) => note.opening).filter((value): value is string => Boolean(value)))).sort((left, right) =>
+      left.localeCompare(right)
+    ),
+    focusAreas: Array.from(new Set(mapped.map((note) => note.focusArea).filter((value): value is string => Boolean(value)))).sort((left, right) =>
+      left.localeCompare(right)
+    ),
+    leakOptions: Array.from(
+      new Map(
+        mapped
+          .filter((note) => note.leakKey)
+          .map((note) => [note.leakKey!, { key: note.leakKey!, label: leakLabelFromKey(note.leakKey) || note.leakKey! }])
+      ).values()
+    )
+  };
+}
+
+export async function searchNotes(filters?: {
+  q?: string;
+  anchorType?: string;
+  tag?: string;
+  opening?: string;
+  leakKey?: string;
+  gameId?: string;
+  ply?: number;
+  trainingCardId?: string;
+  focusArea?: string;
+  hasFen?: string | boolean;
+  limit?: number;
+}) {
+  const normalizedQuery = filters?.q?.trim() ?? "";
+  const normalizedAnchorType = filters?.anchorType?.trim() ?? "";
+  const normalizedTag = filters?.tag?.trim().toLowerCase() ?? "";
+  const normalizedOpening = filters?.opening?.trim().toLowerCase() ?? "";
+  const normalizedLeakKey = filters?.leakKey?.trim() ?? "";
+  const normalizedGameId = filters?.gameId?.trim() ?? "";
+  const normalizedPly = typeof filters?.ply === "number" ? filters.ply : null;
+  const normalizedTrainingCardId = filters?.trainingCardId?.trim() ?? "";
+  const normalizedFocusArea = filters?.focusArea?.trim().toLowerCase() ?? "";
+  const wantsFen = filters?.hasFen === true || filters?.hasFen === "true" || filters?.hasFen === "1";
+
+  let orderedIds: string[] | null = null;
+  let rows: Array<typeof notes.$inferSelect> = [];
+
+  if (normalizedQuery) {
+    const match = escapeFtsQuery(normalizedQuery);
+    if (!match) {
+      return [];
+    }
+
+    const results = sqlite
+      .prepare("SELECT note_id, bm25(notes_search) AS rank FROM notes_search WHERE notes_search MATCH ? ORDER BY rank LIMIT 500")
+      .all(match) as Array<{ note_id: string; rank: number }>;
+
+    orderedIds = results.map((row) => row.note_id);
+    if (!orderedIds.length) {
+      return [];
+    }
+
+    rows = await db.select().from(notes).where(inArray(notes.id, orderedIds));
+  } else {
+    rows = await db.select().from(notes).orderBy(desc(notes.updatedAt));
+  }
+
+  const mapped = rows
+    .map(mapNoteRow)
+    .filter((note) => {
+      if (normalizedAnchorType && note.anchorType !== normalizedAnchorType) {
+        return false;
+      }
+      if (normalizedTag && ![...note.manualTags, ...note.derivedTags].includes(normalizedTag)) {
+        return false;
+      }
+      if (normalizedOpening && note.opening?.toLowerCase() !== normalizedOpening) {
+        return false;
+      }
+      if (normalizedLeakKey && note.leakKey !== normalizedLeakKey) {
+        return false;
+      }
+      if (normalizedGameId && note.gameId !== normalizedGameId) {
+        return false;
+      }
+      if (normalizedPly !== null && note.ply !== normalizedPly) {
+        return false;
+      }
+      if (normalizedTrainingCardId && note.trainingCardId !== normalizedTrainingCardId) {
+        return false;
+      }
+      if (normalizedFocusArea && note.focusArea?.toLowerCase() !== normalizedFocusArea) {
+        return false;
+      }
+      if (wantsFen && !note.fen) {
+        return false;
+      }
+      return true;
+    });
+
+  const sorted = orderedIds
+    ? mapped.sort((left, right) => orderedIds!.indexOf(left.id) - orderedIds!.indexOf(right.id))
+    : mapped.sort((left, right) => right.updatedAt - left.updatedAt);
+
+  return sorted.slice(0, filters?.limit ?? 100);
+}
+
+export async function getRelevantNotesForGameCoach(input: {
+  gameId: string;
+  focusPly?: number;
+  opening?: string | null;
+  leakKeys?: string[];
+  limit?: number;
+}) {
+  const rows = await db.select().from(notes).orderBy(desc(notes.updatedAt)).limit(300);
+
+  return rows
+    .map(mapNoteRow)
+    .map((note) => ({
+      note,
+      score: scoreNoteForGameContext(note, {
+        gameId: input.gameId,
+        focusPly: input.focusPly,
+        opening: input.opening,
+        leakKeys: input.leakKeys
+      })
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || right.note.updatedAt - left.note.updatedAt)
+    .slice(0, input.limit ?? 5)
+    .map((entry) => entry.note);
+}
+
+export async function getRelevantNotesForCoachLab(input: {
+  focusArea?: string | null;
+  leakKeys?: string[];
+  openings?: string[];
+  limit?: number;
+}) {
+  const rows = await db.select().from(notes).orderBy(desc(notes.updatedAt)).limit(300);
+
+  return rows
+    .map(mapNoteRow)
+    .map((note) => ({
+      note,
+      score: scoreNoteForCoachLabContext(note, {
+        focusArea: input.focusArea,
+        leakKeys: input.leakKeys,
+        openings: input.openings
+      })
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || right.note.updatedAt - left.note.updatedAt)
+    .slice(0, input.limit ?? 5)
+    .map((entry) => entry.note);
 }
 
 export type AnalysisJobInput = {
@@ -536,6 +915,7 @@ export async function getGameHistory(filters?: {
   leakKey?: string;
   status?: string;
   result?: string;
+  favorite?: string;
   minSwing?: number;
   limit?: number;
 }) {
@@ -595,6 +975,7 @@ export async function getGameHistory(filters?: {
   const normalizedLeak = (filters?.leakKey || "").trim();
   const normalizedStatus = (filters?.status || "").trim().toLowerCase();
   const normalizedResult = (filters?.result || "").trim().toLowerCase();
+  const normalizedFavorite = (filters?.favorite || "").trim().toLowerCase();
   const minSwing = Number.isFinite(filters?.minSwing) ? Number(filters?.minSwing) : 0;
 
   const historyRows = gameRows
@@ -628,6 +1009,7 @@ export async function getGameHistory(filters?: {
         result: game.result,
         resultLabel,
         resultBucket,
+        isFavorite: Boolean(game.isFavorite),
         status: game.analysisStatus,
         playedAt: game.playedAt,
         timeControl: game.timeControl,
@@ -643,6 +1025,10 @@ export async function getGameHistory(filters?: {
       }
 
       if (normalizedResult && normalizedResult !== "all" && row.resultBucket !== normalizedResult) {
+        return false;
+      }
+
+      if (normalizedFavorite === "favorite" && !row.isFavorite) {
         return false;
       }
 
@@ -725,6 +1111,7 @@ export async function upsertImportedGames(importedGames: ImportedGame[]) {
       timeControl: game.timeControl,
       opening: game.opening,
       eco: game.eco,
+      isFavorite: 0,
       analysisStatus: "pending",
       createdAt: timestamp,
       updatedAt: timestamp
@@ -1035,9 +1422,29 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const activeJob = await getActiveAnalysisJob();
   const allGames = await db.select().from(games);
   const gamesRows = await db.select().from(games).orderBy(desc(games.playedAt)).limit(8);
+  const favoriteRows = await db.select().from(games).where(eq(games.isFavorite, 1)).orderBy(desc(games.playedAt), desc(games.updatedAt)).limit(6);
   const weaknessRows = await db.select().from(weaknessPatterns).orderBy(desc(weaknessPatterns.severity)).limit(6);
   const analyzedRows = await db.select().from(gameReviews);
   const dueCards = await db.select().from(trainingCards).where(lte(trainingCards.dueAt, nowTs()));
+
+  const mapDashboardGame = (row: typeof games.$inferSelect) => {
+    const resultBucket = classifyResultBucketForGame({
+      result: row.result,
+      whitePlayer: row.whitePlayer,
+      blackPlayer: row.blackPlayer,
+      username: profile?.username
+    });
+
+    return {
+      id: row.id,
+      opponent: usernamesMatch(row.whitePlayer, profile?.username) ? row.blackPlayer : row.whitePlayer,
+      result: resultLabelFromBucket(resultBucket),
+      opening: row.opening || "Unknown opening",
+      playedAt: row.playedAt || "Unknown date",
+      status: row.analysisStatus,
+      isFavorite: Boolean(row.isFavorite)
+    };
+  };
 
   return {
     profile: profile
@@ -1070,23 +1477,8 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       count: row.count,
       suggestedFocus: row.suggestedFocus
     })),
-    recentGames: gamesRows.map((row) => {
-      const resultBucket = classifyResultBucketForGame({
-        result: row.result,
-        whitePlayer: row.whitePlayer,
-        blackPlayer: row.blackPlayer,
-        username: profile?.username
-      });
-
-      return {
-        id: row.id,
-        opponent: usernamesMatch(row.whitePlayer, profile?.username) ? row.blackPlayer : row.whitePlayer,
-        result: resultLabelFromBucket(resultBucket),
-        opening: row.opening || "Unknown opening",
-        playedAt: row.playedAt || "Unknown date",
-        status: row.analysisStatus
-      };
-    })
+    recentGames: gamesRows.map(mapDashboardGame),
+    favoriteGames: favoriteRows.map(mapDashboardGame)
   };
 }
 
@@ -1183,6 +1575,16 @@ export async function getGameDetail(gameId: string) {
       createdAt: row.createdAt
     }))
   };
+}
+
+export async function setGameFavorite(gameId: string, favorite: boolean) {
+  await db
+    .update(games)
+    .set({
+      isFavorite: favorite ? 1 : 0,
+      updatedAt: nowTs()
+    })
+    .where(eq(games.id, gameId));
 }
 
 export async function getStoredAIReport(reportType: string) {

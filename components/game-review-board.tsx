@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 
@@ -80,6 +80,8 @@ export function GameReviewBoard(props: {
   playerColor?: "white" | "black";
 }) {
   const [moveFilter, setMoveFilter] = useState<"all" | "mine">("all");
+  const boardContainerRef = useRef<HTMLDivElement | null>(null);
+  const [boardWidth, setBoardWidth] = useState(0);
   const initialPly = useMemo(() => {
     if (!props.initialPly) {
       return props.moves[0]?.ply ?? 0;
@@ -122,6 +124,29 @@ export function GameReviewBoard(props: {
     }
   }, [selectedPly, visibleMoves]);
 
+  useEffect(() => {
+    const container = boardContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const updateBoardWidth = () => {
+      setBoardWidth(Math.floor(container.clientWidth));
+    };
+
+    updateBoardWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateBoardWidth();
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   const selected = useMemo(() => visibleMoves.find((move) => move.ply === selectedPly) ?? visibleMoves[0] ?? null, [selectedPly, visibleMoves]);
   const criticalByPly = useMemo(
     () => new Map((props.criticalMoments ?? []).map((moment) => [moment.ply, moment])),
@@ -161,28 +186,35 @@ export function GameReviewBoard(props: {
                 </div>
               ) : null}
             </div>
-            <Chessboard
-              id="review-board"
-              arePiecesDraggable={false}
-              boardOrientation={props.orientation ?? "white"}
-              position={selected?.fenAfter}
-              customSquareStyles={
-                selectedMoveSquares
-                  ? {
-                      [selectedMoveSquares.from]: {
-                        background:
-                          "radial-gradient(circle, rgba(14,165,233,0.38) 0%, rgba(14,165,233,0.22) 55%, rgba(14,165,233,0.1) 100%)",
-                        boxShadow: "inset 0 0 0 3px rgba(3, 105, 161, 0.9)"
-                      },
-                      [selectedMoveSquares.to]: {
-                        background:
-                          "radial-gradient(circle, rgba(245,158,11,0.36) 0%, rgba(245,158,11,0.2) 55%, rgba(245,158,11,0.08) 100%)",
-                        boxShadow: "inset 0 0 0 3px rgba(180, 83, 9, 0.85)"
-                      }
-                    }
-                  : undefined
-              }
-            />
+            <div ref={boardContainerRef} className="w-full">
+              {boardWidth > 0 ? (
+                <Chessboard
+                  id="review-board"
+                  arePiecesDraggable={false}
+                  boardOrientation={props.orientation ?? "white"}
+                  boardWidth={boardWidth}
+                  position={selected?.fenAfter}
+                  customSquareStyles={
+                    selectedMoveSquares
+                      ? {
+                          [selectedMoveSquares.from]: {
+                            background:
+                              "radial-gradient(circle, rgba(14,165,233,0.38) 0%, rgba(14,165,233,0.22) 55%, rgba(14,165,233,0.1) 100%)",
+                            boxShadow: "inset 0 0 0 3px rgba(3, 105, 161, 0.9)"
+                          },
+                          [selectedMoveSquares.to]: {
+                            background:
+                              "radial-gradient(circle, rgba(245,158,11,0.36) 0%, rgba(245,158,11,0.2) 55%, rgba(245,158,11,0.08) 100%)",
+                            boxShadow: "inset 0 0 0 3px rgba(180, 83, 9, 0.85)"
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              ) : (
+                <div className="aspect-square w-full rounded-[18px] bg-[color:var(--panel-soft)]" />
+              )}
+            </div>
           </div>
         </div>
 

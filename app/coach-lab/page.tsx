@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { CoachLabChat } from "@/components/coach-lab-chat";
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+import { NotesPanel } from "@/components/notes-panel";
 import { RecentReportAction } from "@/components/recent-report-action";
 import { getRecentGamesPortfolioReport } from "@/lib/services/ai-enrichment";
 import { loadCoachLab } from "@/lib/services/coach-lab";
-import { getRecentGamesForPortfolioReview } from "@/lib/services/repository";
+import { getAISettings, getRecentGamesForPortfolioReview } from "@/lib/services/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -130,11 +132,12 @@ function ReportSection(props: { title: string; items: string[]; tone: string }) 
 }
 
 export default async function CoachLabPage() {
-  const [snapshot, reportSample, trendSample, report] = await Promise.all([
+  const [snapshot, reportSample, trendSample, report, aiSettings] = await Promise.all([
     loadCoachLab(20),
     getRecentGamesForPortfolioReview(30),
     getRecentGamesForPortfolioReview(20),
-    getRecentGamesPortfolioReport()
+    getRecentGamesPortfolioReport(),
+    getAISettings()
   ]);
   const trend = buildTrendSnapshot(trendSample);
   const coachChatFocusOptions = [
@@ -165,6 +168,17 @@ export default async function CoachLabPage() {
           <div className="w-full space-y-3 text-left sm:w-auto sm:text-right">
             <p className="text-sm text-muted">Recent analyzed sample: {snapshot.sampleSize} games</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <NoteComposerTrigger
+                buttonLabel="Add coach note"
+                buttonClassName="btn-secondary w-full text-sm sm:w-auto"
+                dialogTitle="Save coach lab note"
+                context={{
+                  anchorType: "coach-flow",
+                  anchorLabel: snapshot.focusOfWeek?.label || "Coach lab",
+                  sourcePath: "/coach-lab",
+                  focusArea: snapshot.focusOfWeek?.label || undefined
+                }}
+              />
               <Link className="btn-secondary w-full text-sm sm:w-auto" href="/training">
                 Open training
               </Link>
@@ -180,7 +194,13 @@ export default async function CoachLabPage() {
             <p className="text-xs uppercase tracking-[0.16em] opacity-70">Focus of the week</p>
             <h2 className="mt-3 font-display text-3xl">{snapshot.focusOfWeek.label}</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 opacity-85">{snapshot.focusOfWeek.whyItHurts}</p>
-            <p className="mt-4 rounded-[18px] bg-white/10 px-4 py-3 text-sm">{snapshot.focusOfWeek.rule}</p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
+              <p className="rounded-[18px] bg-white/10 px-4 py-3 text-sm">{snapshot.focusOfWeek.rule}</p>
+              <div className="rounded-[18px] bg-white/10 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-75">Before your next game</p>
+                <p className="mt-2 text-sm opacity-90">{snapshot.focusOfWeek.rule}</p>
+              </div>
+            </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Link className="btn-secondary w-full text-sm sm:w-auto" href={snapshot.focusOfWeek.href}>
                 Open leak guide
@@ -197,32 +217,18 @@ export default async function CoachLabPage() {
         )}
       </section>
 
-      <CoachLabChat focusOptions={coachChatFocusOptions} />
+      <CoachLabChat focusOptions={coachChatFocusOptions} hasApiKey={aiSettings.hasApiKey} />
 
-      <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <article className="panel">
-          <span className="badge">Pre-Game</span>
-          <h2 className="panel-title mt-3">Three reminders before you play</h2>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-muted">
-            {snapshot.reminders.length ? (
-              snapshot.reminders.map((reminder) => <li key={reminder}>{reminder}</li>)
-            ) : (
-              <li>Import and analyze games to generate your first pre-game checklist.</li>
-            )}
-          </ul>
-        </article>
-
-        <article className="panel">
-          <span className="badge">Method</span>
-          <h2 className="panel-title mt-3">What this coach should train next</h2>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-muted">
-            <li>Critical moments only: improve the decisions that actually changed the game.</li>
-            <li>Blindspot map: fix the thinking error behind the move, not just the move itself.</li>
-            <li>Style trend: protect what already works while tightening what leaks rating.</li>
-            <li>One weekly focus: reduce one repeated leak before attacking the next one.</li>
-          </ul>
-        </article>
-      </section>
+      <NotesPanel
+        title="Notes tied to this coach page"
+        description="Save your own summary of what to train next, what to stop doing, and which focus is worth carrying into the next session."
+        emptyMessage="No notes saved for this coach flow yet."
+        searches={[
+          ...(snapshot.focusOfWeek ? [{ anchorType: "coach-flow", focusArea: snapshot.focusOfWeek.label, limit: 4 }] : []),
+          { anchorType: "coach-flow", limit: 4 }
+        ]}
+        limit={6}
+      />
 
       <section className="panel">
         <span className="badge">Blindspot Map</span>
@@ -285,7 +291,7 @@ export default async function CoachLabPage() {
           </div>
           <div className="w-full space-y-3 text-left sm:w-auto sm:text-right">
             <p className="text-sm text-muted">Analyzed games available: {reportSample.sampleSize}</p>
-            <RecentReportAction hasReport={Boolean(report?.payload)} gamesAvailable={reportSample.sampleSize} />
+            <RecentReportAction hasReport={Boolean(report?.payload)} gamesAvailable={reportSample.sampleSize} hasApiKey={aiSettings.hasApiKey} />
           </div>
         </div>
 

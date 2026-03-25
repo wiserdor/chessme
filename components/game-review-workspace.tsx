@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 
 import { GameCoachChat } from "@/components/game-coach-chat";
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { GameReviewBoard } from "@/components/game-review-board";
+import { NotesPanel } from "@/components/notes-panel";
 
 type MoveRow = {
   id: string;
@@ -60,6 +62,8 @@ function formatCriticalLabel(label: string) {
 
 export function GameReviewWorkspace(props: {
   gameId: string;
+  opening?: string | null;
+  hasApiKey: boolean;
   moves: MoveRow[];
   criticalMoments: CriticalMomentRow[];
   initialPly?: number;
@@ -170,6 +174,22 @@ export function GameReviewWorkspace(props: {
               )}
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {selectedMove ? (
+                  <NoteComposerTrigger
+                    buttonLabel="Add note on this move"
+                    buttonClassName="btn-secondary w-full px-3 py-2 text-xs uppercase tracking-[0.12em] sm:w-auto"
+                    dialogTitle="Save note on this move"
+                    context={{
+                      anchorType: "move",
+                      anchorLabel: `Ply ${selectedMove.ply} • ${selectedMove.san}`,
+                      sourcePath: `/games/${props.gameId}?ply=${selectedMove.ply}#replay`,
+                      gameId: props.gameId,
+                      ply: selectedMove.ply,
+                      fen: selectedMove.fenAfter,
+                      opening: props.opening ?? null
+                    }}
+                  />
+                ) : null}
                 <a className="btn-primary w-full px-3 py-2 text-xs uppercase tracking-[0.12em] sm:w-auto" href="#review-coach">
                   Ask coach about this move
                 </a>
@@ -187,8 +207,10 @@ export function GameReviewWorkspace(props: {
       <GameCoachChat
         gameId={props.gameId}
         sectionId="review-coach"
+        hasApiKey={props.hasApiKey}
         currentFocusPly={selectedPly}
         onFocusPlyChange={setSelectedPly}
+        opening={props.opening ?? undefined}
         focusLabel={focusLabel}
         criticalMoments={props.criticalMoments.slice(0, 8).map((moment) => ({
           ply: moment.ply,
@@ -196,6 +218,41 @@ export function GameReviewWorkspace(props: {
           deltaCp: moment.deltaCp
         }))}
         initialMessages={props.initialMessages}
+        moveContexts={props.moves.map((move) => ({
+          ply: move.ply,
+          san: move.san,
+          fenAfter: move.fenAfter
+        }))}
+      />
+
+      <NotesPanel
+        title="Notes tied to this review"
+        description="Your saved notes follow the current game context, including the selected move and matching opening notes."
+        emptyMessage="No notes saved for this game or opening yet."
+        searches={[
+          ...(selectedMove
+            ? [
+                {
+                  gameId: props.gameId,
+                  anchorType: "move",
+                  ply: selectedMove.ply,
+                  limit: 3
+                },
+                {
+                  gameId: props.gameId,
+                  anchorType: "position",
+                  ply: selectedMove.ply,
+                  limit: 4
+                },
+                {
+                  gameId: props.gameId,
+                  limit: 4
+                }
+              ]
+            : [{ gameId: props.gameId, limit: 4 }]),
+          ...(props.opening ? [{ anchorType: "opening", opening: props.opening, limit: 3 }] : [])
+        ]}
+        limit={6}
       />
     </div>
   );

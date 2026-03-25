@@ -3,14 +3,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-export function GameAIReviewAction(props: { gameId: string; hasAIReview: boolean; analysisStatus: string }) {
+export function GameAIReviewAction(props: { gameId: string; hasAIReview: boolean; analysisStatus: string; hasApiKey: boolean }) {
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [hasCompletedReview, setHasCompletedReview] = useState(props.hasAIReview);
   const [isPending, startTransition] = useTransition();
-  const isBlocked = props.analysisStatus !== "analyzed";
+  const isBlocked = props.analysisStatus !== "analyzed" || !props.hasApiKey;
   const label = hasCompletedReview
     ? "Re-analyze with ChatGPT"
+    : !props.hasApiKey
+    ? "Add token for ChatGPT"
     : isBlocked
     ? props.analysisStatus === "analyzing"
       ? "Game is being analyzed"
@@ -20,13 +22,16 @@ export function GameAIReviewAction(props: { gameId: string; hasAIReview: boolean
       : "Analyze with ChatGPT";
   const helperText =
     notice ||
+    (!props.hasApiKey
+      ? "Add your OpenAI token in Settings before using ChatGPT on games."
+      :
     (props.analysisStatus === "analyzing"
       ? "This game is still in the analysis queue."
       : props.analysisStatus === "pending"
         ? "Wait until the main game analysis finishes."
         : hasCompletedReview
           ? "This will replace the current ChatGPT review and refresh the critical-moment learnings."
-          : null);
+          : null));
 
   return (
     <div className="space-y-2">

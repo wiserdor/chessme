@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
 import { Chess } from "chess.js";
+
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+import { NotesPanel } from "@/components/notes-panel";
 
 type Card = {
   id: string;
@@ -15,6 +18,8 @@ type Card = {
   explanation: string;
   tags: string[];
   difficulty: number;
+  sourceGameId: string;
+  sourcePly: number;
 };
 
 type AnswerResult = {
@@ -26,6 +31,8 @@ type AnswerResult = {
 
 export function TrainingDrill(props: { card: Card | null }) {
   const router = useRouter();
+  const boardContainerRef = useRef<HTMLDivElement | null>(null);
+  const [boardWidth, setBoardWidth] = useState(0);
   const [move, setMove] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   const [confidence, setConfidence] = useState("3");
@@ -46,6 +53,29 @@ export function TrainingDrill(props: { card: Card | null }) {
     );
   }
   const activeCard: Card = card;
+
+  useEffect(() => {
+    const container = boardContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const updateBoardWidth = () => {
+      setBoardWidth(Math.floor(container.clientWidth));
+    };
+
+    updateBoardWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateBoardWidth();
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeCard.id]);
 
   function submitMove(nextMove: string) {
     setResult(null);
@@ -116,33 +146,57 @@ export function TrainingDrill(props: { card: Card | null }) {
         </div>
       </div>
 
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <NoteComposerTrigger
+          buttonLabel="Add note on this drill"
+          buttonClassName="btn-secondary w-full text-sm sm:w-auto"
+          dialogTitle="Save note on this training position"
+          context={{
+            anchorType: "training-card",
+            anchorLabel: activeCard.title,
+            sourcePath: "/training",
+            trainingCardId: activeCard.id,
+            gameId: activeCard.sourceGameId,
+            ply: activeCard.sourcePly,
+            fen: activeCard.promptFen
+          }}
+        />
+      </div>
+
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(560px,1.2fr)_minmax(320px,0.8fr)]">
         <div className="board-shell">
-          <Chessboard
-            id="training-board"
-            arePiecesDraggable={!isPending}
-            position={activeCard.promptFen}
-            onPieceDrop={(sourceSquare, targetSquare, piece) => {
-              if (isPending || !piece) {
-                return false;
-              }
+          <div ref={boardContainerRef} className="w-full">
+            {boardWidth > 0 ? (
+              <Chessboard
+                id="training-board"
+                arePiecesDraggable={!isPending}
+                boardWidth={boardWidth}
+                position={activeCard.promptFen}
+                onPieceDrop={(sourceSquare, targetSquare, piece) => {
+                  if (isPending || !piece) {
+                    return false;
+                  }
 
-              const nextMove = resolveDropMove(sourceSquare, targetSquare, piece);
-              if (!nextMove) {
-                setResult({
-                  correct: false,
-                  expectedMove: "",
-                  explanation: "Illegal move for this position.",
-                  hint: activeCard.hint
-                });
-                return false;
-              }
+                  const nextMove = resolveDropMove(sourceSquare, targetSquare, piece);
+                  if (!nextMove) {
+                    setResult({
+                      correct: false,
+                      expectedMove: "",
+                      explanation: "Illegal move for this position.",
+                      hint: activeCard.hint
+                    });
+                    return false;
+                  }
 
-              setMove(nextMove);
-              submitMove(nextMove);
-              return true;
-            }}
-          />
+                  setMove(nextMove);
+                  submitMove(nextMove);
+                  return true;
+                }}
+              />
+            ) : (
+              <div className="aspect-square w-full rounded-[18px] bg-[color:var(--panel-soft)]" />
+            )}
+          </div>
         </div>
 
         <div className="space-y-4 xl:max-w-[420px] xl:justify-self-end">
@@ -226,6 +280,17 @@ export function TrainingDrill(props: { card: Card | null }) {
           ) : null}
         </div>
       </div>
+
+      <NotesPanel
+        title="Notes tied to this training position"
+        description="Save a correction rule, pattern, or reminder so this drill becomes something you actually remember in your games."
+        emptyMessage="No notes saved for this drill yet."
+        searches={[
+          { trainingCardId: activeCard.id, limit: 4 },
+          { gameId: activeCard.sourceGameId, limit: 2 }
+        ]}
+        limit={5}
+      />
     </section>
   );
 }

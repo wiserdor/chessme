@@ -55,6 +55,27 @@ export const coachChatMessages = sqliteTable("coach_chat_messages", {
   createdAt: integer("created_at").notNull()
 });
 
+export const notes = sqliteTable("notes", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  manualTagsJson: text("manual_tags_json").notNull().default("[]"),
+  derivedTagsJson: text("derived_tags_json").notNull().default("[]"),
+  anchorType: text("anchor_type").notNull(),
+  anchorLabel: text("anchor_label").notNull(),
+  sourcePath: text("source_path").notNull(),
+  gameId: text("game_id"),
+  ply: integer("ply"),
+  fen: text("fen"),
+  opening: text("opening"),
+  leakKey: text("leak_key"),
+  trainingCardId: text("training_card_id"),
+  focusArea: text("focus_area"),
+  coachMessageContext: text("coach_message_context"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull()
+});
+
 export const gameImports = sqliteTable("game_imports", {
   id: text("id").primaryKey(),
   source: text("source").notNull(),
@@ -89,6 +110,7 @@ export const games = sqliteTable("games", {
   timeControl: text("time_control"),
   opening: text("opening"),
   eco: text("eco"),
+  isFavorite: integer("is_favorite").notNull().default(0),
   analysisStatus: text("analysis_status").notNull().default("pending"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull()

@@ -145,6 +145,12 @@ export interface GameCoachChatInput {
     content: string;
     focusPly?: number | null;
   }>;
+  notes: Array<{
+    title: string;
+    excerpt: string;
+    anchorLabel: string;
+    tags: string[];
+  }>;
   focusPly?: number;
 }
 
@@ -182,6 +188,12 @@ export interface CoachLabChatInput {
     role: "user" | "coach";
     content: string;
     focusArea?: string | null;
+  }>;
+  notes: Array<{
+    title: string;
+    excerpt: string;
+    anchorLabel: string;
+    tags: string[];
   }>;
 }
 

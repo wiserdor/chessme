@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { FavoriteGameButton } from "@/components/favorite-game-button";
 import { ResultPill } from "@/components/result-pill";
 import { getGameHistory } from "@/lib/services/repository";
 
@@ -40,6 +41,7 @@ export default async function GamesHistoryPage(props: {
     leak?: string;
     status?: string;
     result?: string;
+    favorite?: string;
     minSwing?: string;
   }>;
 }) {
@@ -52,6 +54,7 @@ export default async function GamesHistoryPage(props: {
     leakKey: searchParams.leak,
     status: searchParams.status,
     result: searchParams.result,
+    favorite: searchParams.favorite,
     minSwing: Number.isFinite(minSwingNumber) ? minSwingNumber : 0
   });
 
@@ -84,7 +87,7 @@ export default async function GamesHistoryPage(props: {
           </Link>
         </div>
 
-        <form action="/games" className="surface-soft grid gap-4 p-4 lg:grid-cols-6">
+        <form action="/games" className="surface-soft grid gap-4 p-4 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted" htmlFor="q">
               Search
@@ -151,6 +154,16 @@ export default async function GamesHistoryPage(props: {
           </div>
 
           <div>
+            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted" htmlFor="favorite">
+              Saved
+            </label>
+            <select className="field mt-2" id="favorite" name="favorite" defaultValue={searchParams.favorite ?? "all"}>
+              <option value="all">All games</option>
+              <option value="favorite">Favorites only</option>
+            </select>
+          </div>
+
+          <div>
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-muted" htmlFor="minSwing">
               Min swing
             </label>
@@ -194,16 +207,28 @@ export default async function GamesHistoryPage(props: {
             history.games.map((game) => (
               <article key={game.id} className="surface-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 cursor-default">
-                    <h3 className="font-display text-2xl text-[color:var(--text)]">{game.opening}</h3>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-2xl">
+                      <Link
+                        className="transition hover:text-[color:var(--primary)] hover:underline"
+                        href={`/games/${game.id}`}
+                      >
+                        {game.opening}
+                      </Link>
+                    </h3>
                     <p className="mt-1 text-sm text-muted-strong">
                       {game.whitePlayer} vs {game.blackPlayer}
                     </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <p className="text-xs uppercase tracking-[0.12em] text-muted">{formatGameTime(game.playedAt)}</p>
-                      <ResultPill result={game.resultLabel} />
-                    </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className="text-xs uppercase tracking-[0.12em] text-muted">{formatGameTime(game.playedAt)}</p>
+                    <ResultPill result={game.resultLabel} />
+                    {game.isFavorite ? (
+                      <span className="rounded-full border border-amber-500/25 bg-amber-500/14 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                        Favorite
+                      </span>
+                    ) : null}
                   </div>
+                </div>
                   <div className="text-right text-sm text-muted">
                     <p>Biggest swing: {game.biggestSwing} cp</p>
                     <p>Mistakes: {game.mistakeCount}</p>
@@ -230,6 +255,7 @@ export default async function GamesHistoryPage(props: {
                 </div>
 
                 <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[color:var(--border)] pt-4">
+                  <FavoriteGameButton compact gameId={game.id} initialFavorite={game.isFavorite} />
                   <Link className="btn-primary text-sm" href={`/games/${game.id}`}>
                     Open game review
                   </Link>

@@ -49,6 +49,26 @@ sqlite.exec(`
     focus_ply INTEGER,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    manual_tags_json TEXT NOT NULL DEFAULT '[]',
+    derived_tags_json TEXT NOT NULL DEFAULT '[]',
+    anchor_type TEXT NOT NULL,
+    anchor_label TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    game_id TEXT,
+    ply INTEGER,
+    fen TEXT,
+    opening TEXT,
+    leak_key TEXT,
+    training_card_id TEXT,
+    focus_area TEXT,
+    coach_message_context TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS ai_configs (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL DEFAULT 'mock',
@@ -98,6 +118,7 @@ sqlite.exec(`
     time_control TEXT,
     opening TEXT,
     eco TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
     analysis_status TEXT NOT NULL DEFAULT 'pending',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -185,6 +206,16 @@ sqlite.exec(`
     confidence INTEGER,
     answered_at INTEGER NOT NULL
   );
+  CREATE VIRTUAL TABLE IF NOT EXISTS notes_search USING fts5(
+    note_id UNINDEXED,
+    title,
+    body,
+    manual_tags,
+    derived_tags,
+    anchor_label,
+    opening,
+    leak_label
+  );
 `);
 
 try {
@@ -208,6 +239,10 @@ try {
 } catch {}
 
 try {
+  sqlite.exec("ALTER TABLE games ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
+} catch {}
+
+try {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS ai_reports (id TEXT PRIMARY KEY, report_type TEXT NOT NULL UNIQUE, title TEXT NOT NULL, games_count INTEGER NOT NULL, payload_json TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, updated_at INTEGER NOT NULL)"
   );
@@ -223,6 +258,20 @@ try {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS coach_chat_messages (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, focus_ply INTEGER, created_at INTEGER NOT NULL)"
   );
+} catch {}
+
+try {
+  sqlite.exec(
+    "CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, manual_tags_json TEXT NOT NULL DEFAULT '[]', derived_tags_json TEXT NOT NULL DEFAULT '[]', anchor_type TEXT NOT NULL, anchor_label TEXT NOT NULL, source_path TEXT NOT NULL, game_id TEXT, ply INTEGER, fen TEXT, opening TEXT, leak_key TEXT, training_card_id TEXT, focus_area TEXT, coach_message_context TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
+  );
+} catch {}
+
+try {
+  sqlite.exec("CREATE VIRTUAL TABLE IF NOT EXISTS notes_search USING fts5(note_id UNINDEXED, title, body, manual_tags, derived_tags, anchor_label, opening, leak_label)");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE notes ADD COLUMN coach_message_context TEXT");
 } catch {}
 
 export const db = drizzle(sqlite, { schema });

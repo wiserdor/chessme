@@ -97,6 +97,15 @@ export function SettingsIcon(props: IconProps) {
   );
 }
 
+export function NotesIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M7 4.5h10A1.5 1.5 0 0 1 18.5 6v12A1.5 1.5 0 0 1 17 19.5H7A1.5 1.5 0 0 1 5.5 18V6A1.5 1.5 0 0 1 7 4.5Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 9h7M8.5 12.5h7M8.5 16h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </BaseIcon>
+  );
+}
+
 export function LeakIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
@@ -112,6 +121,19 @@ export function GameFeedIcon(props: IconProps) {
     <BaseIcon {...props}>
       <path d="M6 6.5h12M6 12h12M6 17.5h8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
       <circle cx="17.5" cy="17.5" fill="currentColor" r="1.4" />
+    </BaseIcon>
+  );
+}
+
+export function FavoriteIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path
+        d="m12 4 2.45 4.97L20 9.78l-4 3.9.94 5.5L12 16.6 7.06 19.2 8 13.68l-4-3.9 5.55-.81L12 4Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </BaseIcon>
   );
 }

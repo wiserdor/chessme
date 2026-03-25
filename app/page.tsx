@@ -1,6 +1,6 @@
 import { DashboardActions } from "@/components/dashboard-actions";
 import { DashboardOverview } from "@/components/dashboard-overview";
-import { RecentGames } from "@/components/recent-games";
+import { FavoriteGames, RecentGames } from "@/components/recent-games";
 import { WeaknessList } from "@/components/weakness-list";
 import { loadDashboard } from "@/lib/services/dashboard-service";
 
@@ -15,7 +15,10 @@ export default async function HomePage() {
       <DashboardActions defaultUsername={snapshot.profile?.username} initialAnalysisJob={snapshot.activeAnalysisJob} />
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <WeaknessList snapshot={snapshot} />
-        <RecentGames snapshot={snapshot} />
+        <div className="space-y-6">
+          <FavoriteGames snapshot={snapshot} />
+          <RecentGames snapshot={snapshot} />
+        </div>
       </div>
     </main>
   );

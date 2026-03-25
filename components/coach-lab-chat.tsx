@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 
+import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+
 type Message = {
   role: "user" | "coach";
   content: string;
@@ -17,6 +19,7 @@ const SUGGESTIONS = [
 
 export function CoachLabChat(props: {
   focusOptions: Array<{ value: string; label: string }>;
+  hasApiKey: boolean;
 }) {
   const [question, setQuestion] = useState("");
   const [focusArea, setFocusArea] = useState(props.focusOptions[0]?.value ?? "");
@@ -81,9 +84,9 @@ export function CoachLabChat(props: {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="badge">Coach Chat</span>
-          <h2 className="panel-title mt-3">Ask the coach about your flows</h2>
+          <h2 className="panel-title mt-3">Ask the coach about your recent games</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            Ask about your current blindspots, style trend, focus of week, or what training sequence makes the most sense next.
+            Ask about your biggest blindspots, what to train next, or which recent example you should review first.
           </p>
         </div>
         <div className="w-full min-w-0 sm:w-auto sm:min-w-[240px]">
@@ -110,7 +113,7 @@ export function CoachLabChat(props: {
           <button
             key={item}
             className="btn-secondary justify-start px-3 py-2 text-left text-xs uppercase tracking-[0.12em]"
-            disabled={isPending}
+            disabled={isPending || !props.hasApiKey}
             onClick={() => submit(item)}
             type="button"
           >
@@ -143,6 +146,23 @@ export function CoachLabChat(props: {
                       ) : null}
                     </div>
                     <p className="mt-2 whitespace-pre-wrap">{message.content}</p>
+                    {message.role === "coach" ? (
+                      <div className="mt-3 flex justify-end">
+                        <NoteComposerTrigger
+                          buttonLabel="Save as note"
+                          buttonClassName="btn-ghost px-3 py-2 text-[11px] uppercase tracking-[0.12em]"
+                          dialogTitle="Save coach note"
+                          initialBody={message.content}
+                          context={{
+                            anchorType: "coach-flow",
+                            anchorLabel: message.focusArea || "Coach lab",
+                            sourcePath: "/coach-lab",
+                            focusArea: message.focusArea || undefined,
+                            coachMessageContext: "coach-lab"
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -173,13 +193,18 @@ export function CoachLabChat(props: {
           <textarea
             id="coach-lab-question"
             className="field-area min-h-28 rounded-[20px]"
-            placeholder="Ask the coach about this page..."
+            placeholder={props.hasApiKey ? "Ask the coach about this page..." : "Add your OpenAI token in Settings to enable coach chat..."}
+            disabled={!props.hasApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
-          {notice ? <p className="text-xs text-[color:var(--error-text)]">{notice}</p> : null}
-          <button className="btn-primary w-full text-sm" disabled={isPending} type="submit">
-            {isPending ? "Thinking..." : "Ask coach"}
+          {notice || !props.hasApiKey ? (
+            <p className={`text-xs ${notice ? "text-[color:var(--error-text)]" : "text-muted"}`}>
+              {notice || "Coach AI is disabled until you add a token in Settings."}
+            </p>
+          ) : null}
+          <button className="btn-primary w-full text-sm" disabled={isPending || !props.hasApiKey} type="submit">
+            {isPending ? "Thinking..." : !props.hasApiKey ? "Add token for coach AI" : "Ask coach"}
           </button>
         </form>
       </div>
