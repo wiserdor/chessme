@@ -6,6 +6,7 @@ import Script from "next/script";
 import {
   BrandKnightIcon,
 } from "@/components/app-icons";
+import { AICoachStatus } from "@/components/ai-coach-status";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -68,6 +69,7 @@ export default function RootLayout(props: Readonly<{ children: React.ReactNode }
                 <SiteNav items={navLinks} />
               </div>
               <div className="flex items-center gap-3 self-start">
+                <AICoachStatus compact showWhenDisabled className="hidden lg:inline-flex" />
                 <ProfileSwitcher />
                 <ThemeToggle />
               </div>

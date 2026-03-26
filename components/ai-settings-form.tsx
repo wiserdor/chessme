@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { AICoachStatus } from "@/components/ai-coach-status";
 import { clearPrivateAIConfig, getPrivateAIConfig, savePrivateAIConfig } from "@/lib/client/private-store";
 
 type ProviderConfig = {
@@ -84,6 +85,8 @@ export function AISettingsForm(props: Props) {
         });
       }}
     >
+      <AICoachStatus showSettingsLink={false} showWhenDisabled />
+
       <div>
         <span className="badge">AI Settings</span>
         <h2 className="panel-title mt-3">Unlock AI coaching</h2>

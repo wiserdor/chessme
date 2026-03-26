@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, lte, or } from "drizzle-orm";
 import { Chess } from "chess.js";
+import { cookies } from "next/headers";
 
 import { db, sqlite } from "@/lib/db";
 import {
@@ -193,13 +194,29 @@ function normalizeProfileUsername(username?: string | null) {
   return username?.trim().toLowerCase() || null;
 }
 
+const ACTIVE_PROFILE_COOKIE = "chessme-active-profile";
+
 async function getLatestPublicProfileUsername() {
   const rows = await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt)).limit(1);
   return normalizeProfileUsername(rows[0]?.username);
 }
 
+async function getCookieActiveProfileUsername() {
+  try {
+    const cookieStore = await cookies();
+    return normalizeProfileUsername(cookieStore.get(ACTIVE_PROFILE_COOKIE)?.value);
+  } catch {
+    return null;
+  }
+}
+
 export async function resolvePublicProfileUsername(username?: string | null) {
-  return normalizeProfileUsername(username) ?? (await getLatestPublicProfileUsername()) ?? "default";
+  return (
+    normalizeProfileUsername(username) ??
+    (await getCookieActiveProfileUsername()) ??
+    (await getLatestPublicProfileUsername()) ??
+    "default"
+  );
 }
 
 function classifyResultBucketForGame(input: {

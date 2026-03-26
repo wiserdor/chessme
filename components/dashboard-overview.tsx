@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SVGProps } from "react";
 
+import { AICoachStatus } from "@/components/ai-coach-status";
 import { CoachIcon, DashboardIcon, LeakIcon, TrainingIcon } from "@/components/app-icons";
 import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
 import { DashboardSnapshot } from "@/lib/types";
@@ -60,6 +61,7 @@ export function DashboardOverview(props: { snapshot: DashboardSnapshot }) {
           This app keeps the loop tight: import games, score mistakes, cluster recurring flaws, then schedule drills
           from the exact positions that hurt your rating.
         </p>
+        <AICoachStatus showSettingsLink showWhenDisabled />
         {!snapshot.hasApiKey ? (
           <UnlockAICoachCard
             compact

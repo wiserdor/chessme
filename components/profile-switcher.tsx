@@ -46,13 +46,24 @@ export function ProfileSwitcher() {
       }
       setSavedProfiles(saved);
       setActiveUsername(active);
+      if (active && typeof document !== "undefined") {
+        const cookieValue = document.cookie
+          .split("; ")
+          .find((item) => item.startsWith("chessme-active-profile="))
+          ?.split("=")[1];
+        const normalizedCookie = cookieValue ? decodeURIComponent(cookieValue) : null;
+        if (normalizedCookie !== active) {
+          setStoredActiveProfile(active);
+          router.refresh();
+        }
+      }
     }
 
     void loadProfiles();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!activeUsername) {

@@ -496,6 +496,49 @@ button {
   box-shadow: var(--shadow-lg);
 }
 
+.ai-status-chip {
+  @apply inline-flex items-center gap-3 rounded-full px-3 py-2 text-sm font-semibold;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.ai-status-chip-enabled {
+  background: color-mix(in srgb, var(--success-bg) 82%, var(--panel-strong) 18%);
+  border-color: color-mix(in srgb, var(--success-text) 26%, var(--border) 74%);
+  color: var(--success-text);
+}
+
+.ai-status-chip-disabled {
+  background: color-mix(in srgb, var(--panel-strong) 94%, transparent 6%);
+  color: var(--text);
+}
+
+.ai-status-chip-copy {
+  @apply flex flex-col items-start leading-tight;
+}
+
+.ai-status-chip-label {
+  @apply text-[11px] uppercase tracking-[0.14em];
+}
+
+.ai-status-chip-model {
+  @apply max-w-[10rem] truncate text-sm;
+}
+
+.ai-status-icon {
+  @apply inline-flex h-10 w-10 items-center justify-center rounded-full;
+}
+
+.ai-status-icon-enabled {
+  background: color-mix(in srgb, var(--success-bg) 72%, var(--panel-strong) 28%);
+  color: var(--success-text);
+}
+
+.ai-status-icon-disabled {
+  background: color-mix(in srgb, var(--info-bg) 72%, var(--panel-strong) 28%);
+  color: var(--info-text);
+}
+
 h1,
 h2,
 h3,

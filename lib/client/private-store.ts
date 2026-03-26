@@ -163,7 +163,9 @@ export function setStoredActiveProfile(username: string) {
     return;
   }
 
-  window.localStorage.setItem(ACTIVE_PROFILE_KEY, profileKey(username));
+  const normalized = profileKey(username);
+  window.localStorage.setItem(ACTIVE_PROFILE_KEY, normalized);
+  window.document.cookie = `${ACTIVE_PROFILE_KEY}=${encodeURIComponent(normalized)}; path=/; max-age=31536000; samesite=lax`;
 }
 
 export async function getPrivateAIConfig(): Promise<PrivateAIConfig> {
@@ -187,10 +189,16 @@ export async function savePrivateAIConfig(input: { provider: "openai" | "mock"; 
     apiKey: input.apiKey,
     updatedAt: nowTs()
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("private-ai-config-updated"));
+  }
 }
 
 export async function clearPrivateAIConfig() {
   await deleteFromStore("aiConfig", "singleton");
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("private-ai-config-updated"));
+  }
 }
 
 export async function listSavedProfiles(): Promise<SavedProfileShortcut[]> {
