@@ -114,7 +114,7 @@ export function ProfileBrowser(props: { activeUsername?: string | null; embedded
           <span className="badge">Step 1</span>
           <h2 className="mt-3 font-display text-2xl">Choose the profile you want to coach</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            Type the real Chess.com username you want to work on, open it, and optionally save it on this device.
+            Enter the exact Chess.com username you want to work on, open it, and optionally save it on this device.
             Public games and engine analysis live on the server per profile. Your saved shortcuts stay private in this
             browser.
           </p>
@@ -131,7 +131,7 @@ export function ProfileBrowser(props: { activeUsername?: string | null; embedded
         <div className="space-y-3">
           <form className="space-y-3" onSubmit={searchProfiles}>
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="profile-search">
-              Chess.com username
+              Exact Chess.com username
             </label>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
@@ -149,11 +149,11 @@ export function ProfileBrowser(props: { activeUsername?: string | null; embedded
                 }}
               />
               <button className="btn-primary w-full sm:w-auto" disabled={isPending} type="submit">
-                {isPending ? "Searching..." : "Search"}
+                {isPending ? "Opening..." : "Open username"}
               </button>
             </div>
             <p className="text-xs text-muted">
-              Use the exact Chess.com username. If it exists, you can open it immediately and start syncing games.
+              This lookup checks the exact public Chess.com username. It does not search broadly across similar names.
             </p>
           </form>
           <div className="space-y-2">
@@ -177,7 +177,9 @@ export function ProfileBrowser(props: { activeUsername?: string | null; embedded
                 </div>
               ))
             ) : hasSearched ? (
-              <p className="surface-soft rounded-[18px] p-4 text-sm text-muted-strong">No Chess.com profile matched that username.</p>
+              <p className="surface-soft rounded-[18px] p-4 text-sm text-muted-strong">
+                No Chess.com profile matched that exact username.
+              </p>
             ) : (
               <p className="surface-soft rounded-[18px] p-4 text-sm text-muted-strong">
                 Search a Chess.com username to open it and make it your active training workspace.

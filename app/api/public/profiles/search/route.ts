@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     }
 
     const [knownProfiles, exactMatch] = await Promise.all([
-      searchPublicProfiles(q, 8),
+      searchPublicProfiles(q, 20),
       validateChessComUsername(q).catch(() => false)
     ]);
 
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       seen.add(q);
     }
 
-    for (const profile of knownProfiles) {
+    for (const profile of knownProfiles.filter((profile) => profile.username === q)) {
       if (seen.has(profile.username)) {
         continue;
       }

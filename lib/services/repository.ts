@@ -196,11 +196,6 @@ function normalizeProfileUsername(username?: string | null) {
 
 const ACTIVE_PROFILE_COOKIE = "chessme-active-profile";
 
-async function getLatestPublicProfileUsername() {
-  const rows = await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt)).limit(1);
-  return normalizeProfileUsername(rows[0]?.username);
-}
-
 async function getCookieActiveProfileUsername() {
   try {
     const cookieStore = await cookies();
@@ -211,12 +206,7 @@ async function getCookieActiveProfileUsername() {
 }
 
 export async function resolvePublicProfileUsername(username?: string | null) {
-  return (
-    normalizeProfileUsername(username) ??
-    (await getCookieActiveProfileUsername()) ??
-    (await getLatestPublicProfileUsername()) ??
-    "default"
-  );
+  return normalizeProfileUsername(username) ?? (await getCookieActiveProfileUsername()) ?? null;
 }
 
 function classifyResultBucketForGame(input: {
@@ -405,9 +395,11 @@ export async function upsertProfile(username: string, provider: string, model: s
 
 export async function getProfile(username?: string | null) {
   const normalizedUsername = normalizeProfileUsername(username);
-  const rows = normalizedUsername
-    ? await db.select().from(profiles).where(eq(profiles.username, normalizedUsername)).limit(1)
-    : await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt)).limit(1);
+  if (!normalizedUsername) {
+    return null;
+  }
+
+  const rows = await db.select().from(profiles).where(eq(profiles.username, normalizedUsername)).limit(1);
   return rows[0] ?? null;
 }
 
@@ -863,6 +855,9 @@ export async function createAnalysisJob(options?: AnalysisJobInput) {
   const timestamp = nowTs();
   const id = createId("job");
   const profileUsername = await resolvePublicProfileUsername(options?.profileUsername);
+  if (!profileUsername) {
+    throw new Error("Choose a profile first.");
+  }
 
   await db.insert(analysisJobs).values({
     id,
@@ -965,6 +960,10 @@ export async function setGamesAnalysisStatus(gameIds: string[], status: string, 
   }
 
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return;
+  }
+
   await db
     .update(games)
     .set({
@@ -976,6 +975,10 @@ export async function setGamesAnalysisStatus(gameIds: string[], status: string, 
 
 export async function resetAnalyzingGamesToPending(profileUsername?: string | null) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return;
+  }
+
   await db
     .update(games)
     .set({
@@ -997,6 +1000,24 @@ export async function getGameHistory(filters?: {
   limit?: number;
 }) {
   const resolvedProfile = await resolvePublicProfileUsername(filters?.profileUsername);
+  if (!resolvedProfile) {
+    return {
+      games: [],
+      openings: [],
+      leakOptions: [
+        { key: "opening-leaks", label: "Opening leaks" },
+        { key: "tactical-oversights", label: "Tactical oversights" },
+        { key: "large-blunders", label: "Large blunders" },
+        { key: "endgame-conversion", label: "Endgame conversion" },
+        { key: "decision-drift", label: "Decision drift" }
+      ],
+      totals: {
+        all: 0,
+        filtered: 0
+      }
+    };
+  }
+
   const profile = await getProfile(resolvedProfile);
   const gameRows = await db
     .select()
@@ -1161,6 +1182,9 @@ export async function getGameHistory(filters?: {
 export async function upsertImportedGames(importedGames: ImportedGame[], profileUsername?: string | null) {
   const timestamp = nowTs();
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    throw new Error("Choose a profile first.");
+  }
 
   for (const game of importedGames) {
     const scopedExternalId = `${resolvedProfile}:${game.externalId}`;
@@ -1216,6 +1240,10 @@ export async function getGamesToAnalyze(
   profileUsername?: string | null
 ) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return [];
+  }
+
   if (gameIds?.length) {
     return db
       .select()
@@ -1340,6 +1368,10 @@ export async function replaceGameAnalysis(
   const timestamp = nowTs();
   const gameRows = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
+  if (!profileUsername) {
+    throw new Error("Could not resolve a profile for this game.");
+  }
+
   await db.delete(positions).where(and(eq(positions.profileUsername, profileUsername), eq(positions.gameId, gameId)));
   await db.delete(engineReviews).where(and(eq(engineReviews.profileUsername, profileUsername), eq(engineReviews.gameId, gameId)));
 
@@ -1422,6 +1454,10 @@ export async function upsertGameReviewNarrative(
   const timestamp = nowTs();
   const gameRows = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
+  if (!profileUsername) {
+    throw new Error("Could not resolve a profile for this game.");
+  }
+
   const existingReview = await db
     .select()
     .from(gameReviews)
@@ -1472,6 +1508,10 @@ export async function upsertGameReviewNarrative(
 export async function replaceWeaknessPatterns(patterns: WeaknessPatternInput[], profileUsername?: string | null) {
   const timestamp = nowTs();
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    throw new Error("Choose a profile first.");
+  }
+
   await db.delete(weaknessPatterns).where(eq(weaknessPatterns.profileUsername, resolvedProfile));
 
   for (const pattern of patterns) {
@@ -1495,6 +1535,10 @@ export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
   for (const card of cards) {
     const gameRows = await db.select().from(games).where(eq(games.id, card.sourceGameId)).limit(1);
     const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
+    if (!profileUsername) {
+      throw new Error("Could not resolve a profile for this training card.");
+    }
+
     const existing = await db
       .select()
       .from(trainingCards)
@@ -1544,6 +1588,23 @@ export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
 
 export async function getDashboardSnapshot(profileUsername?: string | null): Promise<DashboardSnapshot> {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return {
+      profile: null,
+      hasApiKey: false,
+      activeAnalysisJob: null,
+      totals: {
+        games: 0,
+        analyzedGames: 0,
+        dueCards: 0,
+        weaknessCount: 0
+      },
+      weaknesses: [],
+      recentGames: [],
+      favoriteGames: []
+    };
+  }
+
   const profile = await getProfile(resolvedProfile);
   const activeJob = await getActiveAnalysisJob(resolvedProfile);
   const allGames = await db.select().from(games).where(eq(games.profileUsername, resolvedProfile));
@@ -1623,6 +1684,10 @@ export async function getDashboardSnapshot(profileUsername?: string | null): Pro
 
 export async function getGameDetail(gameId: string, profileUsername?: string | null) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return null;
+  }
+
   const game = await db
     .select()
     .from(games)
@@ -1796,6 +1861,31 @@ export async function upsertAIReport(input: {
 
 export async function getRecentGamesForPortfolioReview(limit = 30, profileUsername?: string | null) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return {
+      sampleSize: 0,
+      results: { win: 0, loss: 0, draw: 0, unknown: 0 },
+      openings: [] as Array<{ name: string; count: number }>,
+      leakLabels: [] as Array<{ label: string; count: number }>,
+      games: [] as Array<{
+        id: string;
+        playedAt: string | null;
+        opening: string;
+        result: string;
+        timeControl: string | null;
+        biggestSwing: number;
+        topMistakes: Array<{
+          ply: number;
+          label: string;
+          deltaCp: number;
+          playedMove: string;
+          bestMove: string;
+          tags: string[];
+        }>;
+      }>
+    };
+  }
+
   const profile = await getProfile(resolvedProfile);
   const normalizedLimit = Math.max(1, Math.min(30, limit));
   const gameRows = await db
@@ -1917,6 +2007,10 @@ export async function getRecentGamesForPortfolioReview(limit = 30, profileUserna
 
 export async function getDueTrainingCard(profileUsername?: string | null) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return null;
+  }
+
   const rows = await db
     .select()
     .from(trainingCards)
@@ -1937,6 +2031,10 @@ export async function getDueTrainingCard(profileUsername?: string | null) {
 
 export async function getTrainingCards(profileUsername?: string | null, limit = 120) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return [];
+  }
+
   const rows = await db
     .select()
     .from(trainingCards)
@@ -1952,6 +2050,10 @@ export async function getTrainingCards(profileUsername?: string | null, limit = 
 
 export async function getWeaknessDetail(key: string, profileUsername?: string | null) {
   const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  if (!resolvedProfile) {
+    return null;
+  }
+
   const weaknessRows = await db
     .select()
     .from(weaknessPatterns)
@@ -2035,6 +2137,10 @@ export async function getWeaknessDetail(key: string, profileUsername?: string | 
 
 export async function queueLeakCoachSession(key: string, limit = 3) {
   const resolvedProfile = await resolvePublicProfileUsername();
+  if (!resolvedProfile) {
+    throw new Error("Choose a profile first.");
+  }
+
   const weaknessRows = await db
     .select()
     .from(weaknessPatterns)
