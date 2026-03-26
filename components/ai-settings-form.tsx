@@ -60,6 +60,7 @@ export function AISettingsForm(props: Props) {
   }, [props.selected.hasApiKey, props.selected.model, props.selected.provider]);
 
   const selectedProvider = props.providers.find((item) => item.name === provider) ?? props.providers[0];
+  const defaultOpenAIModel = props.providers.find((item) => item.name === "openai")?.models[0] ?? "gpt-5-mini";
 
   return (
     <form
@@ -71,14 +72,25 @@ export function AISettingsForm(props: Props) {
 
         startTransition(async () => {
           const current = await getPrivateAIConfig();
-          const nextApiKey = clearApiKey ? null : apiKey.trim() || current.apiKey || null;
+          const incomingApiKey = apiKey.trim();
+          const isSavingNewToken = !clearApiKey && Boolean(incomingApiKey);
+          const nextApiKey = clearApiKey ? null : incomingApiKey || current.apiKey || null;
+          const nextProvider = isSavingNewToken ? "openai" : provider;
+          const nextModel =
+            isSavingNewToken && provider === "mock"
+              ? defaultOpenAIModel
+              : model === "deterministic-coach" && nextProvider === "openai"
+                ? defaultOpenAIModel
+                : model;
           await savePrivateAIConfig({
-            provider,
-            model,
+            provider: nextProvider,
+            model: nextModel,
             apiKey: nextApiKey
           });
           setApiKey("");
           setClearApiKey(false);
+          setProvider(nextProvider);
+          setModel(nextModel);
           setHasStoredApiKey(Boolean(nextApiKey));
           setNotice("Settings saved.");
           router.refresh();
@@ -227,7 +239,17 @@ export function AISettingsForm(props: Props) {
           placeholder={hasStoredApiKey ? "Token already saved (enter to replace)" : "Paste token"}
           type="password"
           value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setApiKey(nextValue);
+
+            if (nextValue.trim() && provider !== "openai") {
+              setProvider("openai");
+              if (model === "deterministic-coach") {
+                setModel(defaultOpenAIModel);
+              }
+            }
+          }}
         />
         <p className="mt-2 text-xs text-muted">
           Best experience: keep engine analysis on for all games, then use ChatGPT for coaching surfaces and deeper explanations.
