@@ -73,31 +73,46 @@ async function createStockfishEngine(): Promise<StockfishMessageTarget | null> {
   }
 
   try {
-    const stockfishDir = path.resolve(process.cwd(), "node_modules", "stockfish", "src");
+    const stockfishRoot = path.resolve(process.cwd(), "node_modules", "stockfish");
+    const stockfishDir = path.join(stockfishRoot, "src");
     if (!fs.existsSync(stockfishDir)) {
       return null;
     }
 
-    const candidates = [
-      () => nodeRequire("stockfish/src/stockfish-17.1-lite-single-03e3232.js"),
-      () => nodeRequire("stockfish/src/stockfish-17.1-lite-51f59da.js"),
-      () => nodeRequire("stockfish/src/stockfish-17.1-single-a496a04.js"),
-      () => nodeRequire("stockfish/src/stockfish-17.1-8e4d048.js")
-    ];
+    const loadEnginePath = path.join(stockfishRoot, "examples", "loadEngine.js");
+    const engineCandidates = [
+      path.join(stockfishDir, "stockfish-17.1-lite-single-03e3232.js"),
+      path.join(stockfishDir, "stockfish-17.1-lite-51f59da.js"),
+      path.join(stockfishDir, "stockfish-17.1-single-a496a04.js"),
+      path.join(stockfishDir, "stockfish-17.1-8e4d048.js")
+    ].filter((candidate) => fs.existsSync(candidate));
 
-    for (const loadCandidate of candidates) {
+    if (!fs.existsSync(loadEnginePath) || !engineCandidates.length) {
+      return null;
+    }
+
+    const loadEngine = nodeRequire(loadEnginePath) as (enginePath: string) => {
+      send: (command: string, cb?: (message: string) => void, stream?: (line: string) => void) => void;
+      quit: () => void;
+    };
+
+    for (const enginePath of engineCandidates) {
       try {
-        const imported: any = loadCandidate();
-        const factory =
-          typeof imported.default === "function"
-            ? imported.default
-            : typeof imported === "function"
-              ? imported
-              : null;
+        const engine = loadEngine(enginePath);
+        const target: StockfishMessageTarget = {
+          onmessage: null,
+          postMessage(message: string) {
+            engine.send(
+              message,
+              undefined,
+              (line: string) => {
+                target.onmessage?.({ data: line });
+              }
+            );
+          }
+        };
 
-        if (factory) {
-          return factory() as StockfishMessageTarget;
-        }
+        return target;
       } catch {
         continue;
       }
