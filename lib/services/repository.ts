@@ -1419,6 +1419,7 @@ export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
 
 export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const profile = await getProfile();
+  const aiSettings = await getAISettings();
   const activeJob = await getActiveAnalysisJob();
   const allGames = await db.select().from(games);
   const gamesRows = await db.select().from(games).orderBy(desc(games.playedAt)).limit(8);
@@ -1454,6 +1455,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
           model: profile.model
         }
       : null,
+    hasApiKey: aiSettings.hasApiKey,
     activeAnalysisJob: activeJob
       ? {
           id: activeJob.id,

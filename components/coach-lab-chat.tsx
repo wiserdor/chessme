@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
 
 type Message = {
   role: "user" | "coach";
@@ -122,6 +124,21 @@ export function CoachLabChat(props: {
         ))}
       </div>
 
+      {!props.hasApiKey ? (
+        <div className="mt-4">
+          <UnlockAICoachCard
+            compact
+            title="Unlock your recent-games coach"
+            description="This page gets much stronger with ChatGPT: style diagnosis, training priorities, and practical follow-up questions grounded in your own games."
+            bullets={[
+              "Ask which blindspot is costing you the most",
+              "Turn this page into a weekly training plan",
+              "Save coach answers as notes for future sessions"
+            ]}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="surface-soft rounded-[24px] p-4">
           {messages.length ? (
@@ -193,19 +210,25 @@ export function CoachLabChat(props: {
           <textarea
             id="coach-lab-question"
             className="field-area min-h-28 rounded-[20px]"
-            placeholder={props.hasApiKey ? "Ask the coach about this page..." : "Add your OpenAI token in Settings to enable coach chat..."}
+            placeholder={
+              props.hasApiKey
+                ? "Ask the coach about this page..."
+                : "Unlock AI coach in Settings to ask about blindspots, trends, and what to train next..."
+            }
             disabled={!props.hasApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
-          {notice || !props.hasApiKey ? (
-            <p className={`text-xs ${notice ? "text-[color:var(--error-text)]" : "text-muted"}`}>
-              {notice || "Coach AI is disabled until you add a token in Settings."}
-            </p>
-          ) : null}
-          <button className="btn-primary w-full text-sm" disabled={isPending || !props.hasApiKey} type="submit">
-            {isPending ? "Thinking..." : !props.hasApiKey ? "Add token for coach AI" : "Ask coach"}
-          </button>
+          {notice ? <p className="text-xs text-[color:var(--error-text)]">{notice}</p> : null}
+          {props.hasApiKey ? (
+            <button className="btn-primary w-full text-sm" disabled={isPending} type="submit">
+              {isPending ? "Thinking..." : "Ask coach"}
+            </button>
+          ) : (
+            <Link className="btn-primary w-full text-center text-sm" href="/settings#ai-coach">
+              Unlock AI coach
+            </Link>
+          )}
         </form>
       </div>
     </section>

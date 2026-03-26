@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
@@ -35,34 +36,40 @@ export function GameAIReviewAction(props: { gameId: string; hasAIReview: boolean
 
   return (
     <div className="space-y-2">
-      <button
-        className="btn-primary px-4 py-2 text-xs uppercase tracking-[0.12em]"
-        disabled={isPending || isBlocked}
-        onClick={() => {
-          setNotice(null);
-          startTransition(async () => {
-            const response = await fetch(`/api/games/${props.gameId}/ai-review`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ force: hasCompletedReview })
+      {props.hasApiKey ? (
+        <button
+          className="btn-primary px-4 py-2 text-xs uppercase tracking-[0.12em]"
+          disabled={isPending || isBlocked}
+          onClick={() => {
+            setNotice(null);
+            startTransition(async () => {
+              const response = await fetch(`/api/games/${props.gameId}/ai-review`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ force: hasCompletedReview })
+              });
+              const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+
+              if (!response.ok || payload.ok === false) {
+                setNotice(payload.error || "Could not generate ChatGPT review.");
+                return;
+              }
+
+              setNotice(payload.message || "ChatGPT review generated.");
+              setHasCompletedReview(true);
+              router.refresh();
+              window.location.reload();
             });
-            const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
-
-            if (!response.ok || payload.ok === false) {
-              setNotice(payload.error || "Could not generate ChatGPT review.");
-              return;
-            }
-
-            setNotice(payload.message || "ChatGPT review generated.");
-            setHasCompletedReview(true);
-            router.refresh();
-            window.location.reload();
-          });
-        }}
-        type="button"
-      >
-        {isPending ? "Working..." : label}
-      </button>
+          }}
+          type="button"
+        >
+          {isPending ? "Working..." : label}
+        </button>
+      ) : (
+        <Link className="btn-primary px-4 py-2 text-xs uppercase tracking-[0.12em]" href="/settings#ai-coach">
+          Unlock AI coach
+        </Link>
+      )}
       {helperText ? <p className="text-xs text-muted">{helperText}</p> : null}
     </div>
   );

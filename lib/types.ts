@@ -101,6 +101,7 @@ export interface DashboardSnapshot {
     provider: ProviderName;
     model: string;
   } | null;
+  hasApiKey: boolean;
   activeAnalysisJob: {
     id: string;
     status: string;

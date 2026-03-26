@@ -33,6 +33,7 @@ export function AISettingsForm(props: Props) {
 
   return (
     <form
+      id="ai-coach"
       className="panel space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
@@ -65,9 +66,22 @@ export function AISettingsForm(props: Props) {
     >
       <div>
         <span className="badge">AI Settings</span>
-        <h2 className="panel-title mt-3">Model and token</h2>
+        <h2 className="panel-title mt-3">Unlock AI coaching</h2>
         <p className="mt-2 text-sm text-muted">
-          Store your API token here instead of `.env`. ChatGPT is used only when you request it from a game or leak page.
+          You already have engine analysis. Add your OpenAI token here to unlock deeper coaching, grounded coach chat,
+          leak explanations, and recent-games style reports.
+        </p>
+      </div>
+
+      <div className="tone-info rounded-[24px] p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">What unlocks</p>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-strong">
+          <li>Move-by-move coaching on game pages</li>
+          <li>Coach chat grounded in your own games and saved notes</li>
+          <li>Leak explanations and recent style reports across your latest games</li>
+        </ul>
+        <p className="mt-4 text-xs text-muted">
+          Your token is stored only in this local app and used only when you explicitly run AI coaching features.
         </p>
       </div>
 
@@ -152,6 +166,9 @@ export function AISettingsForm(props: Props) {
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
         />
+        <p className="mt-2 text-xs text-muted">
+          Best experience: keep engine analysis on for all games, then use ChatGPT for coaching surfaces and deeper explanations.
+        </p>
         {props.selected.hasApiKey ? (
           <label className="mt-3 flex items-center gap-2 text-sm text-muted">
             <input checked={clearApiKey} type="checkbox" onChange={(event) => setClearApiKey(event.target.checked)} />

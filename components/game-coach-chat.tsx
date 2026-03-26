@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
+import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
 
 type CriticalMomentOption = {
   ply: number;
@@ -185,6 +187,21 @@ export function GameCoachChat(props: {
         </div>
       ) : null}
 
+      {!props.hasApiKey ? (
+        <div className="mt-4">
+          <UnlockAICoachCard
+            compact
+            title="Unlock move-by-move coaching"
+            description="You already have the board and engine review here. Add your token to ask why this move failed, what you missed, and what to think about next time."
+            bullets={[
+              "Ask about the selected move or the whole game",
+              "Save coach answers as notes tied to the exact position",
+              "Keep every answer grounded in this analyzed game"
+            ]}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {SUGGESTIONS.map((item) => (
           <button
@@ -275,20 +292,26 @@ export function GameCoachChat(props: {
         >
           <textarea
             className="field-area min-h-24 rounded-[20px]"
-            placeholder={props.hasApiKey ? "Ask the coach about this game..." : "Add your OpenAI token in Settings to enable coach chat..."}
+            placeholder={
+              props.hasApiKey
+                ? "Ask the coach about this game..."
+                : "Unlock AI coach in Settings to ask about this move, this position, or the whole game..."
+            }
             disabled={!props.hasApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {notice || !props.hasApiKey ? (
-              <p className="text-xs text-muted">{notice || "Coach AI is disabled until you add a token in Settings."}</p>
+            {notice ? <p className="text-xs text-[color:var(--error-text)]">{notice}</p> : <span />}
+            {props.hasApiKey ? (
+              <button className="btn-primary text-sm" disabled={isPending} type="submit">
+                {isPending ? "Thinking..." : "Ask coach"}
+              </button>
             ) : (
-              <span />
+              <Link className="btn-primary text-sm" href="/settings#ai-coach">
+                Unlock AI coach
+              </Link>
             )}
-            <button className="btn-primary text-sm" disabled={isPending || !props.hasApiKey} type="submit">
-              {isPending ? "Thinking..." : !props.hasApiKey ? "Add token for coach AI" : "Ask coach"}
-            </button>
           </div>
         </form>
       </div>

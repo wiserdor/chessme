@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { SVGProps } from "react";
 
 import { CoachIcon, DashboardIcon, LeakIcon, TrainingIcon } from "@/components/app-icons";
+import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
 import { DashboardSnapshot } from "@/lib/types";
 
 export function DashboardOverview(props: { snapshot: DashboardSnapshot }) {
@@ -59,6 +60,18 @@ export function DashboardOverview(props: { snapshot: DashboardSnapshot }) {
           This app keeps the loop tight: import games, score mistakes, cluster recurring flaws, then schedule drills
           from the exact positions that hurt your rating.
         </p>
+        {!snapshot.hasApiKey ? (
+          <UnlockAICoachCard
+            compact
+            title="Engine analysis is already running"
+            description="Add ChatGPT to unlock deeper move explanations, a grounded coach chat, and a style report across your recent games."
+            bullets={[
+              "Ask why a critical move failed and what to think about next time",
+              "Get leak explanations tied to your own positions",
+              "Build a style report from your latest 20-30 games"
+            ]}
+          />
+        ) : null}
         <div className="surface-soft p-5 text-sm leading-6 text-muted-strong">
           Suggested habit: sync after every playing session, analyze the fresh batch, then clear at least three due
           drills before your next rated game.
