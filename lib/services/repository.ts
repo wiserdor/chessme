@@ -189,6 +189,19 @@ function usernamesMatch(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
 }
 
+function normalizeProfileUsername(username?: string | null) {
+  return username?.trim().toLowerCase() || null;
+}
+
+async function getLatestPublicProfileUsername() {
+  const rows = await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt)).limit(1);
+  return normalizeProfileUsername(rows[0]?.username);
+}
+
+export async function resolvePublicProfileUsername(username?: string | null) {
+  return normalizeProfileUsername(username) ?? (await getLatestPublicProfileUsername()) ?? "default";
+}
+
 function classifyResultBucketForGame(input: {
   result: string;
   whitePlayer: string;
@@ -341,14 +354,19 @@ function escapeFtsQuery(value: string) {
 }
 
 export async function upsertProfile(username: string, provider: string, model: string) {
-  const existing = await db.select().from(profiles).limit(1);
+  const normalizedUsername = normalizeProfileUsername(username);
+  if (!normalizedUsername) {
+    throw new Error("Username is required.");
+  }
+
+  const existing = await db.select().from(profiles).where(eq(profiles.username, normalizedUsername)).limit(1);
   const timestamp = nowTs();
 
   if (existing[0]) {
     await db
       .update(profiles)
       .set({
-        username,
+        username: normalizedUsername,
         provider,
         model,
         updatedAt: timestamp
@@ -360,7 +378,7 @@ export async function upsertProfile(username: string, provider: string, model: s
 
   await db.insert(profiles).values({
     id: createId("profile"),
-    username,
+    username: normalizedUsername,
     provider,
     model,
     createdAt: timestamp,
@@ -368,9 +386,24 @@ export async function upsertProfile(username: string, provider: string, model: s
   });
 }
 
-export async function getProfile() {
-  const row = await db.select().from(profiles).limit(1);
-  return row[0] ?? null;
+export async function getProfile(username?: string | null) {
+  const normalizedUsername = normalizeProfileUsername(username);
+  const rows = normalizedUsername
+    ? await db.select().from(profiles).where(eq(profiles.username, normalizedUsername)).limit(1)
+    : await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function searchPublicProfiles(query?: string | null, limit = 12) {
+  const normalized = query?.trim().toLowerCase() ?? "";
+  const rows = await db.select().from(profiles).orderBy(desc(profiles.updatedAt), desc(profiles.createdAt));
+  return rows
+    .filter((row) => !normalized || row.username.toLowerCase().includes(normalized))
+    .slice(0, limit)
+    .map((row) => ({
+      username: row.username,
+      updatedAt: row.updatedAt
+    }));
 }
 
 export async function getAISettings() {
@@ -803,6 +836,7 @@ export async function getRelevantNotesForCoachLab(input: {
 }
 
 export type AnalysisJobInput = {
+  profileUsername?: string;
   gameIds?: string[];
   limit?: number;
   reanalyze?: boolean;
@@ -811,9 +845,11 @@ export type AnalysisJobInput = {
 export async function createAnalysisJob(options?: AnalysisJobInput) {
   const timestamp = nowTs();
   const id = createId("job");
+  const profileUsername = await resolvePublicProfileUsername(options?.profileUsername);
 
   await db.insert(analysisJobs).values({
     id,
+    profileUsername,
     status: "pending",
     optionsJson: JSON.stringify(options ?? {}),
     totalGames: 0,
@@ -832,24 +868,45 @@ export async function getAnalysisJob(jobId: string) {
   return rows[0] ?? null;
 }
 
-export async function getActiveAnalysisJob() {
-  const rows = await db
-    .select()
-    .from(analysisJobs)
-    .where(or(eq(analysisJobs.status, "pending"), eq(analysisJobs.status, "running")))
-    .orderBy(desc(analysisJobs.updatedAt), desc(analysisJobs.createdAt))
-    .limit(1);
+export async function getActiveAnalysisJob(profileUsername?: string | null) {
+  const resolvedProfile = normalizeProfileUsername(profileUsername);
+  const rows = resolvedProfile
+    ? await db
+        .select()
+        .from(analysisJobs)
+        .where(
+          and(
+            eq(analysisJobs.profileUsername, resolvedProfile),
+            or(eq(analysisJobs.status, "pending"), eq(analysisJobs.status, "running"))
+          )
+        )
+        .orderBy(desc(analysisJobs.updatedAt), desc(analysisJobs.createdAt))
+        .limit(1)
+    : await db
+        .select()
+        .from(analysisJobs)
+        .where(or(eq(analysisJobs.status, "pending"), eq(analysisJobs.status, "running")))
+        .orderBy(desc(analysisJobs.updatedAt), desc(analysisJobs.createdAt))
+        .limit(1);
 
   return rows[0] ?? null;
 }
 
-export async function getNextPendingAnalysisJob() {
-  const rows = await db
-    .select()
-    .from(analysisJobs)
-    .where(eq(analysisJobs.status, "pending"))
-    .orderBy(asc(analysisJobs.createdAt))
-    .limit(1);
+export async function getNextPendingAnalysisJob(profileUsername?: string | null) {
+  const resolvedProfile = normalizeProfileUsername(profileUsername);
+  const rows = resolvedProfile
+    ? await db
+        .select()
+        .from(analysisJobs)
+        .where(and(eq(analysisJobs.profileUsername, resolvedProfile), eq(analysisJobs.status, "pending")))
+        .orderBy(asc(analysisJobs.createdAt))
+        .limit(1)
+    : await db
+        .select()
+        .from(analysisJobs)
+        .where(eq(analysisJobs.status, "pending"))
+        .orderBy(asc(analysisJobs.createdAt))
+        .limit(1);
 
   const row = rows[0];
   if (!row) {
@@ -885,31 +942,34 @@ export async function updateAnalysisJob(
     .where(eq(analysisJobs.id, jobId));
 }
 
-export async function setGamesAnalysisStatus(gameIds: string[], status: string) {
+export async function setGamesAnalysisStatus(gameIds: string[], status: string, profileUsername?: string | null) {
   if (!gameIds.length) {
     return;
   }
 
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
   await db
     .update(games)
     .set({
       analysisStatus: status,
       updatedAt: nowTs()
     })
-    .where(inArray(games.id, gameIds));
+    .where(and(eq(games.profileUsername, resolvedProfile), inArray(games.id, gameIds)));
 }
 
-export async function resetAnalyzingGamesToPending() {
+export async function resetAnalyzingGamesToPending(profileUsername?: string | null) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
   await db
     .update(games)
     .set({
       analysisStatus: "pending",
       updatedAt: nowTs()
     })
-    .where(eq(games.analysisStatus, "analyzing"));
+    .where(and(eq(games.profileUsername, resolvedProfile), eq(games.analysisStatus, "analyzing")));
 }
 
 export async function getGameHistory(filters?: {
+  profileUsername?: string;
   query?: string;
   opening?: string;
   leakKey?: string;
@@ -919,15 +979,21 @@ export async function getGameHistory(filters?: {
   minSwing?: number;
   limit?: number;
 }) {
-  const profile = await getProfile();
-  const gameRows = await db.select().from(games).orderBy(desc(games.playedAt), desc(games.createdAt));
+  const resolvedProfile = await resolvePublicProfileUsername(filters?.profileUsername);
+  const profile = await getProfile(resolvedProfile);
+  const gameRows = await db
+    .select()
+    .from(games)
+    .where(eq(games.profileUsername, resolvedProfile))
+    .orderBy(desc(games.playedAt), desc(games.createdAt));
   const reviewRows = await db
     .select({
       gameId: engineReviews.gameId,
       label: engineReviews.label,
       deltaCp: engineReviews.deltaCp
     })
-    .from(engineReviews);
+    .from(engineReviews)
+    .where(eq(engineReviews.profileUsername, resolvedProfile));
 
   const byGame = new Map<
     string,
@@ -1075,11 +1141,17 @@ export async function getGameHistory(filters?: {
   };
 }
 
-export async function upsertImportedGames(importedGames: ImportedGame[]) {
+export async function upsertImportedGames(importedGames: ImportedGame[], profileUsername?: string | null) {
   const timestamp = nowTs();
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
 
   for (const game of importedGames) {
-    const existing = await db.select().from(games).where(eq(games.externalId, game.externalId)).limit(1);
+    const scopedExternalId = `${resolvedProfile}:${game.externalId}`;
+    const existing = await db
+      .select()
+      .from(games)
+      .where(and(eq(games.profileUsername, resolvedProfile), eq(games.externalId, scopedExternalId)))
+      .limit(1);
 
     if (existing[0]) {
       await db
@@ -1100,7 +1172,8 @@ export async function upsertImportedGames(importedGames: ImportedGame[]) {
 
     await db.insert(games).values({
       id: createId("game"),
-      externalId: game.externalId,
+      profileUsername: resolvedProfile,
+      externalId: scopedExternalId,
       source: game.source,
       sourceUrl: game.sourceUrl,
       pgn: game.pgn,
@@ -1119,19 +1192,34 @@ export async function upsertImportedGames(importedGames: ImportedGame[]) {
   }
 }
 
-export async function getGamesToAnalyze(gameIds?: string[], limit = 10, reanalyze = false) {
+export async function getGamesToAnalyze(
+  gameIds?: string[],
+  limit = 10,
+  reanalyze = false,
+  profileUsername?: string | null
+) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
   if (gameIds?.length) {
-    return db.select().from(games).where(inArray(games.id, gameIds)).limit(limit);
+    return db
+      .select()
+      .from(games)
+      .where(and(eq(games.profileUsername, resolvedProfile), inArray(games.id, gameIds)))
+      .limit(limit);
   }
 
   if (reanalyze) {
-    return db.select().from(games).orderBy(desc(games.playedAt)).limit(limit);
+    return db
+      .select()
+      .from(games)
+      .where(eq(games.profileUsername, resolvedProfile))
+      .orderBy(desc(games.playedAt))
+      .limit(limit);
   }
 
   return db
     .select()
     .from(games)
-    .where(eq(games.analysisStatus, "pending"))
+    .where(and(eq(games.profileUsername, resolvedProfile), eq(games.analysisStatus, "pending")))
     .orderBy(desc(games.playedAt))
     .limit(limit);
 }
@@ -1233,12 +1321,15 @@ export async function replaceGameAnalysis(
   }
 ) {
   const timestamp = nowTs();
-  await db.delete(positions).where(eq(positions.gameId, gameId));
-  await db.delete(engineReviews).where(eq(engineReviews.gameId, gameId));
+  const gameRows = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
+  await db.delete(positions).where(and(eq(positions.profileUsername, profileUsername), eq(positions.gameId, gameId)));
+  await db.delete(engineReviews).where(and(eq(engineReviews.profileUsername, profileUsername), eq(engineReviews.gameId, gameId)));
 
   for (const position of extractedPositions) {
     await db.insert(positions).values({
       id: createId("pos"),
+      profileUsername,
       gameId,
       ply: position.ply,
       san: position.san,
@@ -1252,6 +1343,7 @@ export async function replaceGameAnalysis(
   for (const review of reviews) {
     await db.insert(engineReviews).values({
       id: createId("eval"),
+      profileUsername,
       gameId,
       ply: review.ply,
       fen: review.fen,
@@ -1311,7 +1403,13 @@ export async function upsertGameReviewNarrative(
   }
 ) {
   const timestamp = nowTs();
-  const existingReview = await db.select().from(gameReviews).where(eq(gameReviews.gameId, gameId)).limit(1);
+  const gameRows = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
+  const existingReview = await db
+    .select()
+    .from(gameReviews)
+    .where(and(eq(gameReviews.profileUsername, profileUsername), eq(gameReviews.gameId, gameId)))
+    .limit(1);
   const shouldPreserveExistingAI =
     Boolean(options?.preserveExistingAI) &&
     existingReview[0]?.coachSource === "openai" &&
@@ -1340,6 +1438,7 @@ export async function upsertGameReviewNarrative(
 
   await db.insert(gameReviews).values({
     id: createId("review"),
+    profileUsername,
     gameId,
     summary: narrative.summary,
     coachingNotesJson: JSON.stringify(narrative.coachingNotes),
@@ -1353,13 +1452,15 @@ export async function upsertGameReviewNarrative(
   });
 }
 
-export async function replaceWeaknessPatterns(patterns: WeaknessPatternInput[]) {
+export async function replaceWeaknessPatterns(patterns: WeaknessPatternInput[], profileUsername?: string | null) {
   const timestamp = nowTs();
-  await db.delete(weaknessPatterns);
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  await db.delete(weaknessPatterns).where(eq(weaknessPatterns.profileUsername, resolvedProfile));
 
   for (const pattern of patterns) {
     await db.insert(weaknessPatterns).values({
       id: createId("weak"),
+      profileUsername: resolvedProfile,
       key: pattern.key,
       label: pattern.label,
       severity: pattern.severity,
@@ -1375,11 +1476,17 @@ export async function replaceWeaknessPatterns(patterns: WeaknessPatternInput[]) 
 export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
   const now = nowTs();
   for (const card of cards) {
+    const gameRows = await db.select().from(games).where(eq(games.id, card.sourceGameId)).limit(1);
+    const profileUsername = gameRows[0]?.profileUsername ?? (await resolvePublicProfileUsername());
     const existing = await db
       .select()
       .from(trainingCards)
       .where(
-        and(eq(trainingCards.sourceGameId, card.sourceGameId), eq(trainingCards.sourcePly, card.sourcePly))
+        and(
+          eq(trainingCards.profileUsername, profileUsername),
+          eq(trainingCards.sourceGameId, card.sourceGameId),
+          eq(trainingCards.sourcePly, card.sourcePly)
+        )
       )
       .limit(1);
 
@@ -1402,6 +1509,7 @@ export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
 
     await db.insert(trainingCards).values({
       id: createId("card"),
+      profileUsername,
       title: card.title,
       theme: card.theme,
       promptFen: card.promptFen,
@@ -1417,16 +1525,28 @@ export async function upsertTrainingCards(cards: TrainingCardPayload[]) {
   }
 }
 
-export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
-  const profile = await getProfile();
-  const aiSettings = await getAISettings();
-  const activeJob = await getActiveAnalysisJob();
-  const allGames = await db.select().from(games);
-  const gamesRows = await db.select().from(games).orderBy(desc(games.playedAt)).limit(8);
-  const favoriteRows = await db.select().from(games).where(eq(games.isFavorite, 1)).orderBy(desc(games.playedAt), desc(games.updatedAt)).limit(6);
-  const weaknessRows = await db.select().from(weaknessPatterns).orderBy(desc(weaknessPatterns.severity)).limit(6);
-  const analyzedRows = await db.select().from(gameReviews);
-  const dueCards = await db.select().from(trainingCards).where(lte(trainingCards.dueAt, nowTs()));
+export async function getDashboardSnapshot(profileUsername?: string | null): Promise<DashboardSnapshot> {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  const profile = await getProfile(resolvedProfile);
+  const activeJob = await getActiveAnalysisJob(resolvedProfile);
+  const allGames = await db.select().from(games).where(eq(games.profileUsername, resolvedProfile));
+  const gamesRows = await db
+    .select()
+    .from(games)
+    .where(eq(games.profileUsername, resolvedProfile))
+    .orderBy(desc(games.playedAt))
+    .limit(8);
+  const weaknessRows = await db
+    .select()
+    .from(weaknessPatterns)
+    .where(eq(weaknessPatterns.profileUsername, resolvedProfile))
+    .orderBy(desc(weaknessPatterns.severity))
+    .limit(6);
+  const analyzedRows = await db.select().from(gameReviews).where(eq(gameReviews.profileUsername, resolvedProfile));
+  const dueCards = await db
+    .select()
+    .from(trainingCards)
+    .where(and(eq(trainingCards.profileUsername, resolvedProfile), lte(trainingCards.dueAt, nowTs())));
 
   const mapDashboardGame = (row: typeof games.$inferSelect) => {
     const resultBucket = classifyResultBucketForGame({
@@ -1451,11 +1571,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     profile: profile
       ? {
           username: profile.username,
-          provider: profile.provider as ProviderName,
-          model: profile.model
+          provider: "mock" as ProviderName,
+          model: "deterministic-coach"
         }
       : null,
-    hasApiKey: aiSettings.hasApiKey,
+    hasApiKey: false,
     activeAnalysisJob: activeJob
       ? {
           id: activeJob.id,
@@ -1480,17 +1600,22 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       suggestedFocus: row.suggestedFocus
     })),
     recentGames: gamesRows.map(mapDashboardGame),
-    favoriteGames: favoriteRows.map(mapDashboardGame)
+    favoriteGames: []
   };
 }
 
-export async function getGameDetail(gameId: string) {
-  const game = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+export async function getGameDetail(gameId: string, profileUsername?: string | null) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  const game = await db
+    .select()
+    .from(games)
+    .where(and(eq(games.profileUsername, resolvedProfile), eq(games.id, gameId)))
+    .limit(1);
   if (!game[0]) {
     return null;
   }
 
-  const profile = await getProfile();
+  const profile = await getProfile(resolvedProfile);
   const playerColor = profile
     ? usernamesMatch(game[0].whitePlayer, profile.username)
       ? "white"
@@ -1498,12 +1623,20 @@ export async function getGameDetail(gameId: string) {
         ? "black"
         : null
     : null;
-  const review = await db.select().from(gameReviews).where(eq(gameReviews.gameId, gameId)).limit(1);
-  const positionRows = await db.select().from(positions).where(eq(positions.gameId, gameId)).orderBy(asc(positions.ply));
+  const review = await db
+    .select()
+    .from(gameReviews)
+    .where(and(eq(gameReviews.profileUsername, resolvedProfile), eq(gameReviews.gameId, gameId)))
+    .limit(1);
+  const positionRows = await db
+    .select()
+    .from(positions)
+    .where(and(eq(positions.profileUsername, resolvedProfile), eq(positions.gameId, gameId)))
+    .orderBy(asc(positions.ply));
   const evalRows = await db
     .select()
     .from(engineReviews)
-    .where(eq(engineReviews.gameId, gameId))
+    .where(and(eq(engineReviews.profileUsername, resolvedProfile), eq(engineReviews.gameId, gameId)))
     .orderBy(desc(engineReviews.deltaCp), asc(engineReviews.ply));
   const leakNotesRows = await db
     .select()
@@ -1644,13 +1777,14 @@ export async function upsertAIReport(input: {
   });
 }
 
-export async function getRecentGamesForPortfolioReview(limit = 30) {
-  const profile = await getProfile();
+export async function getRecentGamesForPortfolioReview(limit = 30, profileUsername?: string | null) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  const profile = await getProfile(resolvedProfile);
   const normalizedLimit = Math.max(1, Math.min(30, limit));
   const gameRows = await db
     .select()
     .from(games)
-    .where(eq(games.analysisStatus, "analyzed"))
+    .where(and(eq(games.profileUsername, resolvedProfile), eq(games.analysisStatus, "analyzed")))
     .orderBy(desc(games.playedAt), desc(games.updatedAt))
     .limit(normalizedLimit);
 
@@ -1683,7 +1817,7 @@ export async function getRecentGamesForPortfolioReview(limit = 30) {
   const reviewRows = await db
     .select()
     .from(engineReviews)
-    .where(inArray(engineReviews.gameId, gameIds))
+    .where(and(eq(engineReviews.profileUsername, resolvedProfile), inArray(engineReviews.gameId, gameIds)))
     .orderBy(desc(engineReviews.deltaCp), asc(engineReviews.ply));
 
   const byGame = new Map<
@@ -1764,11 +1898,12 @@ export async function getRecentGamesForPortfolioReview(limit = 30) {
   };
 }
 
-export async function getDueTrainingCard() {
+export async function getDueTrainingCard(profileUsername?: string | null) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
   const rows = await db
     .select()
     .from(trainingCards)
-    .where(lte(trainingCards.dueAt, nowTs()))
+    .where(and(eq(trainingCards.profileUsername, resolvedProfile), lte(trainingCards.dueAt, nowTs())))
     .orderBy(desc(trainingCards.difficulty))
     .limit(1);
 
@@ -1783,8 +1918,28 @@ export async function getDueTrainingCard() {
   };
 }
 
-export async function getWeaknessDetail(key: string) {
-  const weaknessRows = await db.select().from(weaknessPatterns).where(eq(weaknessPatterns.key, key)).limit(1);
+export async function getTrainingCards(profileUsername?: string | null, limit = 120) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  const rows = await db
+    .select()
+    .from(trainingCards)
+    .where(eq(trainingCards.profileUsername, resolvedProfile))
+    .orderBy(desc(trainingCards.difficulty), asc(trainingCards.dueAt))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
+    tags: safeJsonParse<string[]>(row.tagsJson, [])
+  }));
+}
+
+export async function getWeaknessDetail(key: string, profileUsername?: string | null) {
+  const resolvedProfile = await resolvePublicProfileUsername(profileUsername);
+  const weaknessRows = await db
+    .select()
+    .from(weaknessPatterns)
+    .where(and(eq(weaknessPatterns.profileUsername, resolvedProfile), eq(weaknessPatterns.key, key)))
+    .limit(1);
   const weakness = weaknessRows[0];
   if (!weakness) {
     return null;
@@ -1806,7 +1961,13 @@ export async function getWeaknessDetail(key: string) {
           })
           .from(engineReviews)
           .innerJoin(games, eq(engineReviews.gameId, games.id))
-          .where(inArray(engineReviews.label, labels))
+          .where(
+            and(
+              eq(engineReviews.profileUsername, resolvedProfile),
+              eq(games.profileUsername, resolvedProfile),
+              inArray(engineReviews.label, labels)
+            )
+          )
           .orderBy(desc(engineReviews.deltaCp), desc(games.playedAt))
           .limit(12)
       : [];
@@ -1814,7 +1975,7 @@ export async function getWeaknessDetail(key: string) {
   const relatedCards = await db
     .select()
     .from(trainingCards)
-    .where(eq(trainingCards.theme, weakness.label))
+    .where(and(eq(trainingCards.profileUsername, resolvedProfile), eq(trainingCards.theme, weakness.label)))
     .orderBy(asc(trainingCards.dueAt))
     .limit(12);
 
@@ -1856,7 +2017,12 @@ export async function getWeaknessDetail(key: string) {
 }
 
 export async function queueLeakCoachSession(key: string, limit = 3) {
-  const weaknessRows = await db.select().from(weaknessPatterns).where(eq(weaknessPatterns.key, key)).limit(1);
+  const resolvedProfile = await resolvePublicProfileUsername();
+  const weaknessRows = await db
+    .select()
+    .from(weaknessPatterns)
+    .where(and(eq(weaknessPatterns.profileUsername, resolvedProfile), eq(weaknessPatterns.key, key)))
+    .limit(1);
   const weakness = weaknessRows[0];
   if (!weakness) {
     throw new Error("Leak not found");
@@ -1865,7 +2031,7 @@ export async function queueLeakCoachSession(key: string, limit = 3) {
   const relatedCards = await db
     .select()
     .from(trainingCards)
-    .where(eq(trainingCards.theme, weakness.label))
+    .where(and(eq(trainingCards.profileUsername, resolvedProfile), eq(trainingCards.theme, weakness.label)))
     .orderBy(desc(trainingCards.difficulty), asc(trainingCards.dueAt))
     .limit(limit);
 

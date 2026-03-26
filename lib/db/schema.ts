@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const profiles = sqliteTable("profiles", {
   id: text("id").primaryKey(),
@@ -78,6 +78,7 @@ export const notes = sqliteTable("notes", {
 
 export const gameImports = sqliteTable("game_imports", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   source: text("source").notNull(),
   sourceId: text("source_id").notNull(),
   status: text("status").notNull(),
@@ -87,6 +88,7 @@ export const gameImports = sqliteTable("game_imports", {
 
 export const analysisJobs = sqliteTable("analysis_jobs", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   status: text("status").notNull(),
   optionsJson: text("options_json").notNull().default("{}"),
   totalGames: integer("total_games").notNull().default(0),
@@ -99,6 +101,7 @@ export const analysisJobs = sqliteTable("analysis_jobs", {
 
 export const games = sqliteTable("games", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   externalId: text("external_id").notNull().unique(),
   source: text("source").notNull(),
   sourceUrl: text("source_url"),
@@ -118,6 +121,7 @@ export const games = sqliteTable("games", {
 
 export const positions = sqliteTable("positions", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   gameId: text("game_id").notNull(),
   ply: integer("ply").notNull(),
   san: text("san").notNull(),
@@ -129,6 +133,7 @@ export const positions = sqliteTable("positions", {
 
 export const engineReviews = sqliteTable("engine_reviews", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   gameId: text("game_id").notNull(),
   ply: integer("ply").notNull(),
   fen: text("fen").notNull(),
@@ -144,6 +149,7 @@ export const engineReviews = sqliteTable("engine_reviews", {
 
 export const gameReviews = sqliteTable("game_reviews", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   gameId: text("game_id").notNull().unique(),
   summary: text("summary").notNull(),
   coachingNotesJson: text("coaching_notes_json").notNull().default("[]"),
@@ -167,20 +173,28 @@ export const aiReports = sqliteTable("ai_reports", {
   updatedAt: integer("updated_at").notNull()
 });
 
-export const weaknessPatterns = sqliteTable("weakness_patterns", {
-  id: text("id").primaryKey(),
-  key: text("key").notNull().unique(),
-  label: text("label").notNull(),
-  severity: integer("severity").notNull(),
-  count: integer("count").notNull(),
-  examplesJson: text("examples_json").notNull().default("[]"),
-  suggestedFocus: text("suggested_focus").notNull(),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull()
-});
+export const weaknessPatterns = sqliteTable(
+  "weakness_patterns",
+  {
+    id: text("id").primaryKey(),
+    profileUsername: text("profile_username").notNull().default("default"),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    severity: integer("severity").notNull(),
+    count: integer("count").notNull(),
+    examplesJson: text("examples_json").notNull().default("[]"),
+    suggestedFocus: text("suggested_focus").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull()
+  },
+  (table) => ({
+    profileKeyUnique: uniqueIndex("weakness_patterns_profile_key_unique").on(table.profileUsername, table.key)
+  })
+);
 
 export const trainingCards = sqliteTable("training_cards", {
   id: text("id").primaryKey(),
+  profileUsername: text("profile_username").notNull().default("default"),
   title: text("title").notNull(),
   theme: text("theme").notNull(),
   promptFen: text("prompt_fen").notNull(),

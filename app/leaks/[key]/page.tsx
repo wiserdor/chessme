@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { LeakAIExplainAction } from "@/components/leak-ai-explain-action";
+import { LeakExamplesPanel } from "@/components/leak-examples-panel";
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { NotesPanel } from "@/components/notes-panel";
 import { LeakSessionAction } from "@/components/leak-session-action";
@@ -25,7 +25,26 @@ export default async function LeakDetailPage(props: { params: Promise<{ key: str
   const params = await props.params;
   const [detail, aiSettings] = await Promise.all([getWeaknessDetail(params.key), getAISettings()]);
   if (!detail) {
-    notFound();
+    return (
+      <main className="space-y-6">
+        <section className="panel space-y-4">
+          <span className="badge">Leak Guide</span>
+          <h1 className="mt-3 font-display text-4xl">This leak is not in the current profile</h1>
+          <p className="max-w-2xl text-sm leading-6 text-muted">
+            The active profile changed, so this leak guide may belong to a different game set. Open the dashboard or
+            switch back to another saved profile from the header.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Link className="btn-primary w-full text-sm sm:w-auto" href="/">
+              Back to dashboard
+            </Link>
+            <Link className="btn-secondary w-full text-sm sm:w-auto" href="/games">
+              Open current profile games
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   const playbook = getLeakPlaybook(detail.weakness.key, detail.weakness.label);
@@ -258,76 +277,24 @@ export default async function LeakDetailPage(props: { params: Promise<{ key: str
         </article>
       </section>
 
-      <section className="panel">
-        <span className="badge">Examples</span>
-        <h2 className="panel-title mt-3">Where this leak appears in your games</h2>
-        <p className="mt-2 text-sm text-muted">
-          {aiExplainedCount} of {explainedExamples.length} examples currently have AI explanations.
-        </p>
-        {explainedExamples.length ? (
-          <div className="scroll-panel mt-4 max-h-[32rem] overflow-y-auto rounded-[24px] border border-[color:var(--border)] bg-[color:var(--panel-soft)] p-3 pr-2">
-            <ul className="space-y-3 text-sm text-muted-strong">
-              {explainedExamples.map((example) => (
-                <li key={`${example.gameId}-${example.ply ?? "n"}`} className="surface-card rounded-[18px] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      {example.href ? (
-                        <Link className="font-semibold underline-offset-2 hover:underline" href={example.href}>
-                          {example.text}
-                        </Link>
-                      ) : (
-                        <p className="font-semibold">{example.text}</p>
-                      )}
-                      {tacticalModel ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
-                            {tacticalModel.examples.find((item) => item.gameId === example.gameId && item.ply === example.ply)?.motifTitle}
-                          </span>
-                          <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--panel-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-strong">
-                            {tacticalModel.examples.find((item) => item.gameId === example.gameId && item.ply === example.ply)?.trigger}
-                          </span>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                      {example.href ? (
-                        <Link className="btn-secondary w-full text-xs sm:w-auto" href={example.href}>
-                          Open in game
-                        </Link>
-                      ) : null}
-                      {example.href ? (
-                        <Link className="btn-primary w-full text-xs sm:w-auto" href={`${example.href}#review-coach`}>
-                          Ask coach
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                  <p className="mt-2 text-sm leading-6">
-                    <span className="font-semibold">
-                      {example.source === "ai" ? "AI explanation:" : "Engine fallback:"}
-                    </span>{" "}
-                    {example.explanation}
-                  </p>
-                  <p className="mt-1 text-sm leading-6">
-                    <span className="font-semibold">Why this is a leak:</span> {example.whyLeak}
-                  </p>
-                  {tacticalModel ? (
-                    <p className="mt-2 text-sm leading-6 text-muted-strong">
-                      <span className="font-semibold">Rule to remember:</span>{" "}
-                      {
-                        tacticalModel.examples.find((item) => item.gameId === example.gameId && item.ply === example.ply)
-                          ?.rule
-                      }
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-muted-strong">No examples stored yet for this leak.</p>
-        )}
-      </section>
+      <LeakExamplesPanel
+        leakKey={detail.weakness.key}
+        initialExamples={explainedExamples}
+        tacticalDecorByExample={
+          tacticalModel
+            ? Object.fromEntries(
+                tacticalModel.examples.map((item) => [
+                  `${item.gameId}:${item.ply ?? "n"}`,
+                  {
+                    motifTitle: item.motifTitle,
+                    trigger: item.trigger,
+                    rule: item.rule
+                  }
+                ])
+              )
+            : undefined
+        }
+      />
 
       <NotesPanel
         title="Your notes on this leak"

@@ -5,7 +5,7 @@ import { enqueueAnalysisJob } from "@/lib/services/analysis-queue";
 
 const bodySchema = z.object({
   gameIds: z.array(z.string()).optional(),
-  limit: z.number().int().positive().max(50).optional(),
+  limit: z.number().int().positive().max(30).optional(),
   reanalyze: z.boolean().optional()
 });
 

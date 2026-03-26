@@ -1,19 +1,11 @@
 import { createProvider } from "@/lib/ai";
-import { explainLeakExamples } from "@/lib/services/leak-explanations";
 import { loadCoachLab } from "@/lib/services/coach-lab";
 import {
-  appendCoachChatExchange,
   getAISettings,
-  getCoachChatMessages,
   getGameDetail,
-  getRelevantNotesForCoachLab,
-  getRelevantNotesForGameCoach,
   getRecentGamesForPortfolioReview,
   getStoredAIReport,
   getWeaknessDetail,
-  upsertAIReport,
-  replaceCriticalMomentNotes,
-  upsertGameReviewNarrative
 } from "@/lib/services/repository";
 
 const OPENAI_RETRY_DELAYS_MS = [1200, 2600];
@@ -82,8 +74,17 @@ function leakKeyFromLabel(label: string) {
   }
 }
 
-async function withOpenAIProvider<T>(runner: (provider: ReturnType<typeof createProvider>, model: string) => Promise<T>) {
-  const settings = await getAISettings();
+type ExplicitAISettings = {
+  provider: "openai" | "mock";
+  model: string;
+  apiKey?: string | null;
+};
+
+async function withOpenAIProvider<T>(
+  runner: (provider: ReturnType<typeof createProvider>, model: string) => Promise<T>,
+  explicitSettings?: ExplicitAISettings
+) {
+  const settings = explicitSettings ?? (await getAISettings());
 
   if (settings.provider !== "openai") {
     throw new Error("OpenAI is not selected in Settings.");
@@ -121,7 +122,11 @@ async function withOpenAIProvider<T>(runner: (provider: ReturnType<typeof create
   throw new Error("OpenAI request failed.");
 }
 
-export async function analyzeGameWithAI(gameId: string, options?: { force?: boolean }) {
+export async function analyzeGameWithAI(
+  gameId: string,
+  options?: { force?: boolean },
+  explicitSettings?: ExplicitAISettings
+) {
   const detail = await getGameDetail(gameId);
   if (!detail) {
     throw new Error("Game not found.");
@@ -153,43 +158,98 @@ export async function analyzeGameWithAI(gameId: string, options?: { force?: bool
       }))
     });
 
-    await upsertGameReviewNarrative(gameId, insights.review, {
-      coachSource: "openai",
-      coachProvider: "openai",
-      coachModel: model
-    });
-    await replaceCriticalMomentNotes(gameId, insights.criticalMoments, {
-      provider: "openai",
-      model
-    });
-
     return {
       updated: true,
+      review: insights.review,
+      criticalMoments: insights.criticalMoments,
+      provider: "openai" as const,
+      model,
       message: `${options?.force ? "ChatGPT review re-analyzed" : "ChatGPT review generated"} with ${model}.`
     };
-  });
+  }, explicitSettings);
 }
 
-export async function analyzeLeakWithAI(leakKey: string) {
+export async function analyzeLeakWithAI(leakKey: string, explicitSettings?: ExplicitAISettings) {
   const detail = await getWeaknessDetail(leakKey);
   if (!detail) {
     throw new Error("Leak not found.");
   }
 
-  return withOpenAIProvider(async () => {
-    const explained = await explainLeakExamples(detail.weakness.label, detail.weakness.key, detail.weakness.examples, {
-      mode: "enrich"
+  return withOpenAIProvider(async (provider, model) => {
+    const aiInputs = detail.weakness.examples
+      .filter(
+        (example) =>
+          typeof example.ply === "number" &&
+          typeof example.deltaCp === "number" &&
+          typeof example.playedMove === "string" &&
+          typeof example.bestMove === "string" &&
+          typeof example.label === "string"
+      )
+      .slice(0, 4)
+      .map((example) => ({
+        exampleId: `${example.gameId}:${example.ply}`,
+        opening: example.opening,
+        ply: example.ply as number,
+        playedMove: example.playedMove as string,
+        bestMove: example.bestMove as string,
+        deltaCp: example.deltaCp as number,
+        label: example.label as string
+      }));
+
+    if (!aiInputs.length) {
+      return {
+        updated: false,
+        provider: "openai" as const,
+        model,
+        examples: [],
+        message: "No rich leak examples were available for ChatGPT yet."
+      };
+    }
+
+    const explanations = await provider.generateLeakExplanations({
+      leakLabel: detail.weakness.label,
+      examples: aiInputs
     });
 
-    const aiCount = explained.filter((example) => example.source === "ai").length;
+    const examples = explanations
+      .map((item) => {
+        const [gameId, plyValue] = item.exampleId.split(":");
+        const ply = Number.parseInt(plyValue, 10);
+        if (!gameId || !Number.isFinite(ply)) {
+          return null;
+        }
+
+        return {
+          gameId,
+          ply,
+          explanation: item.explanation,
+          whyLeak: item.whyLeak,
+          source: "ai" as const
+        };
+      })
+      .filter(
+        (
+          item
+        ): item is {
+          gameId: string;
+          ply: number;
+          explanation: string;
+          whyLeak: string;
+          source: "ai";
+        } => Boolean(item)
+      );
+
     return {
-      updated: true,
-      message: `ChatGPT explanations ready for ${aiCount} examples.`
+      updated: examples.length > 0,
+      provider: "openai" as const,
+      model,
+      examples,
+      message: `ChatGPT explanations ready for ${examples.length} examples.`
     };
-  });
+  }, explicitSettings);
 }
 
-export async function analyzeRecentGamesPortfolio(limit = 30) {
+export async function analyzeRecentGamesPortfolio(limit = 30, explicitSettings?: ExplicitAISettings) {
   const dataset = await getRecentGamesForPortfolioReview(limit);
   if (!dataset.sampleSize) {
     throw new Error("Run engine analysis on at least one game before requesting a portfolio report.");
@@ -198,28 +258,32 @@ export async function analyzeRecentGamesPortfolio(limit = 30) {
   return withOpenAIProvider(async (provider, model) => {
     const report = await provider.generatePortfolioReview(dataset);
 
-    await upsertAIReport({
-      reportType: "recent-30",
-      title: "Last 30 games coach report",
-      gamesCount: dataset.sampleSize,
-      provider: "openai",
-      model,
-      payload: report
-    });
-
     return {
       updated: true,
       gamesCount: dataset.sampleSize,
+      report,
+      provider: "openai" as const,
+      model,
+      title: "Last 30 games coach report",
       message: `ChatGPT analyzed your last ${dataset.sampleSize} games with ${model}.`
     };
-  });
+  }, explicitSettings);
 }
 
 export async function getRecentGamesPortfolioReport() {
   return getStoredAIReport("recent-30");
 }
 
-export async function answerGameCoachQuestion(gameId: string, question: string, focusPly?: number) {
+export async function answerGameCoachQuestion(
+  gameId: string,
+  question: string,
+  focusPly?: number,
+  input?: {
+    history?: Array<{ role: "user" | "coach"; content: string; focusPly?: number | null }>;
+    notes?: Array<{ title: string; excerpt: string; anchorLabel: string; tags: string[] }>;
+    settings?: ExplicitAISettings;
+  }
+) {
   const detail = await getGameDetail(gameId);
   if (!detail) {
     throw new Error("Game not found.");
@@ -234,16 +298,8 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
   }
 
   const criticalNotesByPly = new Map(detail.criticalMomentNotes.map((note) => [note.ply, note]));
-  const savedHistory = await getCoachChatMessages(gameId);
   const playerColor =
     detail.playerColor === "white" || detail.playerColor === "black" ? detail.playerColor : null;
-  const leakKeys = Array.from(
-    new Set(
-      detail.engineReviews
-        .map((review) => leakKeyFromLabel(review.label))
-        .filter((value): value is NonNullable<ReturnType<typeof leakKeyFromLabel>> => value !== null)
-    )
-  );
   const criticalMoments = detail.engineReviews.slice(0, 6).map((review) => ({
     ply: review.ply,
     label: review.label,
@@ -256,14 +312,6 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
     whatToThink: criticalNotesByPly.get(review.ply)?.whatToThink,
     trainingFocus: criticalNotesByPly.get(review.ply)?.trainingFocus
   }));
-  const relevantNotes = await getRelevantNotesForGameCoach({
-    gameId,
-    focusPly,
-    opening: detail.game.opening,
-    leakKeys,
-    limit: 4
-  });
-
   return withOpenAIProvider(async (provider) => {
     const answer = await provider.answerGameCoachQuestion({
       question: question.trim(),
@@ -273,25 +321,9 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
       playerColor,
       gameSummary: detail.review?.summary ?? null,
       actionItems: detail.review?.actionItems ?? [],
-      history: savedHistory.slice(-12).map((message) => ({
-        role: message.role,
-        content: message.content,
-        focusPly: message.focusPly
-      })),
-      notes: relevantNotes.map((note) => ({
-        title: note.title,
-        excerpt: note.excerpt,
-        anchorLabel: note.anchorLabel,
-        tags: [...note.manualTags, ...note.derivedTags]
-      })),
+      history: (input?.history ?? []).slice(-12),
+      notes: input?.notes ?? [],
       criticalMoments,
-      focusPly
-    });
-
-    await appendCoachChatExchange({
-      gameId,
-      question: question.trim(),
-      answer,
       focusPly
     });
 
@@ -299,7 +331,7 @@ export async function answerGameCoachQuestion(gameId: string, question: string, 
       answer,
       focusPly: focusPly ?? null
     };
-  });
+  }, input?.settings);
 }
 
 function buildTrendSnapshot(sample: Awaited<ReturnType<typeof getRecentGamesForPortfolioReview>>) {
@@ -338,7 +370,11 @@ function buildTrendSnapshot(sample: Awaited<ReturnType<typeof getRecentGamesForP
 export async function answerCoachLabQuestion(
   question: string,
   focusArea?: string,
-  history?: Array<{ role: "user" | "coach"; content: string; focusArea?: string | null }>
+  history?: Array<{ role: "user" | "coach"; content: string; focusArea?: string | null }>,
+  input?: {
+    notes?: Array<{ title: string; excerpt: string; anchorLabel: string; tags: string[] }>;
+    settings?: ExplicitAISettings;
+  }
 ) {
   if (!question.trim()) {
     throw new Error("Question is required.");
@@ -353,13 +389,6 @@ export async function answerCoachLabQuestion(
   if (!snapshot.sampleSize) {
     throw new Error("Analyze games first before asking the coach about your flows.");
   }
-
-  const relevantNotes = await getRelevantNotesForCoachLab({
-    focusArea,
-    leakKeys: snapshot.blindspots.map((item) => item.key),
-    openings: snapshot.criticalMoments.map((moment) => moment.opening.split("•")[0]?.trim() || moment.opening),
-    limit: 4
-  });
 
   return withOpenAIProvider(async (provider) => {
     const answer = await provider.answerCoachLabQuestion({
@@ -386,14 +415,9 @@ export async function answerCoachLabQuestion(
       trend: buildTrendSnapshot(reportSample),
       styleReportSummary: report?.payload?.summary ?? null,
       history: (history ?? []).slice(-12),
-      notes: relevantNotes.map((note) => ({
-        title: note.title,
-        excerpt: note.excerpt,
-        anchorLabel: note.anchorLabel,
-        tags: [...note.manualTags, ...note.derivedTags]
-      }))
+      notes: input?.notes ?? []
     });
 
     return { answer };
-  });
+  }, input?.settings);
 }

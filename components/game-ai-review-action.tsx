@@ -1,64 +1,151 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-export function GameAIReviewAction(props: { gameId: string; hasAIReview: boolean; analysisStatus: string; hasApiKey: boolean }) {
+import {
+  getPrivateAIConfig,
+  getPrivateGameAIReview,
+  getStoredActiveProfile,
+  savePrivateGameAIReview
+} from "@/lib/client/private-store";
+
+export function GameAIReviewAction(props: {
+  gameId: string;
+  hasAIReview: boolean;
+  analysisStatus: string;
+  hasApiKey: boolean;
+}) {
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [hasCompletedReview, setHasCompletedReview] = useState(props.hasAIReview);
+  const [hasLocalApiKey, setHasLocalApiKey] = useState(props.hasApiKey);
+  const [settings, setSettings] = useState<{ provider: "openai" | "mock"; model: string; apiKey?: string } | null>(null);
   const [isPending, startTransition] = useTransition();
-  const isBlocked = props.analysisStatus !== "analyzed" || !props.hasApiKey;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocalState() {
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const [config, cachedReview] = await Promise.all([
+        getPrivateAIConfig(),
+        getPrivateGameAIReview(profileUsername, props.gameId)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      const localHasApiKey = config.provider === "openai" && Boolean(config.apiKey);
+      setHasLocalApiKey(localHasApiKey);
+      setSettings(
+        localHasApiKey
+          ? {
+              provider: "openai",
+              model: config.model,
+              apiKey: config.apiKey ?? undefined
+            }
+          : null
+      );
+      if (cachedReview) {
+        setHasCompletedReview(true);
+      }
+    }
+
+    void loadLocalState();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.gameId, props.hasApiKey]);
+
+  const isBlocked = props.analysisStatus !== "analyzed" || !hasLocalApiKey;
   const label = hasCompletedReview
     ? "Re-analyze with ChatGPT"
-    : !props.hasApiKey
-    ? "Add token for ChatGPT"
-    : isBlocked
-    ? props.analysisStatus === "analyzing"
-      ? "Game is being analyzed"
-      : "Run game analysis first"
-    : props.hasAIReview
-      ? "Refresh with ChatGPT"
-      : "Analyze with ChatGPT";
+    : !hasLocalApiKey
+      ? "Add token for ChatGPT"
+      : isBlocked
+        ? props.analysisStatus === "analyzing"
+          ? "Game is being analyzed"
+          : "Run game analysis first"
+        : props.hasAIReview
+          ? "Refresh with ChatGPT"
+          : "Analyze with ChatGPT";
+
   const helperText =
     notice ||
-    (!props.hasApiKey
+    (!hasLocalApiKey
       ? "Add your OpenAI token in Settings before using ChatGPT on games."
-      :
-    (props.analysisStatus === "analyzing"
-      ? "This game is still in the analysis queue."
-      : props.analysisStatus === "pending"
-        ? "Wait until the main game analysis finishes."
-        : hasCompletedReview
-          ? "This will replace the current ChatGPT review and refresh the critical-moment learnings."
-          : null));
+      : props.analysisStatus === "analyzing"
+        ? "This game is still in the analysis queue."
+        : props.analysisStatus === "pending"
+          ? "Wait until the main game analysis finishes."
+          : hasCompletedReview
+            ? "This will replace the current private ChatGPT review and refresh the critical-moment learnings."
+            : null);
 
   return (
     <div className="space-y-2">
-      {props.hasApiKey ? (
+      {hasLocalApiKey ? (
         <button
           className="btn-primary px-4 py-2 text-xs uppercase tracking-[0.12em]"
           disabled={isPending || isBlocked}
           onClick={() => {
             setNotice(null);
             startTransition(async () => {
+              const profileUsername = getStoredActiveProfile() ?? "default";
+              if (!settings?.apiKey) {
+                setNotice("Add your OpenAI token in Settings before using ChatGPT on games.");
+                return;
+              }
+
               const response = await fetch(`/api/games/${props.gameId}/ai-review`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ force: hasCompletedReview })
+                body: JSON.stringify({
+                  force: hasCompletedReview,
+                  settings
+                })
               });
-              const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+              const payload = (await response.json().catch(() => ({}))) as {
+                ok?: boolean;
+                error?: string;
+                message?: string;
+                review?: {
+                  summary: string;
+                  coachingNotes: string[];
+                  actionItems: string[];
+                  confidence: number;
+                };
+                criticalMoments?: Array<{
+                  ply: number;
+                  label: string;
+                  whatHappened: string;
+                  whyItMatters: string;
+                  whatToThink: string;
+                  trainingFocus: string;
+                  confidence: number;
+                }>;
+                provider?: string;
+                model?: string;
+              };
 
-              if (!response.ok || payload.ok === false) {
+              if (!response.ok || payload.ok === false || !payload.review) {
                 setNotice(payload.error || "Could not generate ChatGPT review.");
                 return;
               }
 
+              await savePrivateGameAIReview(profileUsername, props.gameId, {
+                review: payload.review,
+                criticalMoments: payload.criticalMoments ?? [],
+                provider: payload.provider || "openai",
+                model: payload.model || settings.model
+              });
+              window.dispatchEvent(new Event("private-game-review-updated"));
               setNotice(payload.message || "ChatGPT review generated.");
               setHasCompletedReview(true);
               router.refresh();
-              window.location.reload();
             });
           }}
           type="button"

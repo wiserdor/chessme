@@ -1,4 +1,4 @@
-import { getAISettings, upsertProfile } from "@/lib/services/repository";
+import { upsertProfile } from "@/lib/services/repository";
 import { validateChessComUsername } from "@/lib/services/chesscom";
 
 export async function connectProfile(username: string) {
@@ -12,12 +12,11 @@ export async function connectProfile(username: string) {
     throw new Error("Chess.com username was not found");
   }
 
-  const aiSettings = await getAISettings();
-  await upsertProfile(normalized, aiSettings.provider, aiSettings.model);
+  await upsertProfile(normalized, "mock", "deterministic-coach");
 
   return {
     username: normalized,
-    provider: aiSettings.provider,
-    model: aiSettings.model
+    provider: "mock",
+    model: "deterministic-coach"
   };
 }

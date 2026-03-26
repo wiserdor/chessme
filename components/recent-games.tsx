@@ -1,10 +1,39 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 import { FavoriteIcon, GameFeedIcon, GamesIcon } from "@/components/app-icons";
 import { ResultPill } from "@/components/result-pill";
+import { getStoredActiveProfile, listFavoriteGameIds } from "@/lib/client/private-store";
 import { DashboardSnapshot } from "@/lib/types";
 
 export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
+  const activeProfile = getStoredActiveProfile() ?? props.snapshot.profile?.username ?? "default";
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const ids = await listFavoriteGameIds(activeProfile);
+      if (!cancelled) {
+        setFavoriteIds(ids);
+      }
+    }
+    void load();
+    const onUpdate = () => void load();
+    window.addEventListener("favorites-updated", onUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("favorites-updated", onUpdate);
+    };
+  }, [activeProfile]);
+
+  const favoriteGames = useMemo(
+    () => props.snapshot.recentGames.filter((game) => favoriteIds.includes(game.id)),
+    [favoriteIds, props.snapshot.recentGames]
+  );
+
   return (
     <section className="panel">
       <div>
@@ -16,8 +45,8 @@ export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
       </div>
 
       <div className="mt-6 space-y-4">
-        {props.snapshot.favoriteGames.length ? (
-          props.snapshot.favoriteGames.map((game) => (
+        {favoriteGames.length ? (
+          favoriteGames.map((game) => (
             <Link
               key={game.id}
               href={`/games/${game.id}`}
@@ -40,7 +69,7 @@ export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
             </Link>
           ))
         ) : (
-          <p className="surface-soft p-5 text-sm text-muted-strong">No favorite games saved yet.</p>
+          <p className="surface-soft p-5 text-sm text-muted-strong">No favorite games saved yet on this device.</p>
         )}
       </div>
     </section>
@@ -48,6 +77,26 @@ export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
 }
 
 export function RecentGames(props: { snapshot: DashboardSnapshot }) {
+  const activeProfile = getStoredActiveProfile() ?? props.snapshot.profile?.username ?? "default";
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const ids = await listFavoriteGameIds(activeProfile);
+      if (!cancelled) {
+        setFavoriteIds(ids);
+      }
+    }
+    void load();
+    const onUpdate = () => void load();
+    window.addEventListener("favorites-updated", onUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("favorites-updated", onUpdate);
+    };
+  }, [activeProfile]);
+
   return (
     <section className="panel">
       <div>
@@ -70,7 +119,7 @@ export function RecentGames(props: { snapshot: DashboardSnapshot }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <GamesIcon className="h-4 w-4 text-muted" />
                   <p className="font-semibold">{game.opening}</p>
-                  {game.isFavorite ? <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" /> : null}
+                  {favoriteIds.includes(game.id) ? <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" /> : null}
                   <span className="rounded-full bg-slate-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                     {game.status}
                   </span>

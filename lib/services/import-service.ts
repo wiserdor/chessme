@@ -8,10 +8,11 @@ import { nowTs } from "@/lib/utils/time";
 
 export async function importFromChessCom(username: string, options?: { from?: string; to?: string }) {
   const games = await fetchChessComGames(username, options);
-  await upsertImportedGames(games);
+  await upsertImportedGames(games, username);
 
   await db.insert(gameImports).values({
     id: createId("import"),
+    profileUsername: username,
     source: "chesscom",
     sourceId: username,
     status: "success",
@@ -30,10 +31,12 @@ export async function importFromChessCom(username: string, options?: { from?: st
 
 export async function importPgnBundle(input: string) {
   const games = parseImportedGames(input, "pgn");
-  await upsertImportedGames(games);
+  const profileUsername = games[0]?.whitePlayer?.trim().toLowerCase() || "default";
+  await upsertImportedGames(games, profileUsername);
 
   await db.insert(gameImports).values({
     id: createId("import"),
+    profileUsername,
     source: "pgn",
     sourceId: "manual-upload",
     status: "success",

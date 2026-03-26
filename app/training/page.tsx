@@ -1,12 +1,12 @@
 import Link from "next/link";
 
 import { TrainingDrill } from "@/components/training-drill";
-import { getNextTrainingCard } from "@/lib/services/training-service";
+import { getTrainingCards } from "@/lib/services/repository";
 
 export const dynamic = "force-dynamic";
 
 export default async function TrainingPage() {
-  const card = await getNextTrainingCard();
+  const cards = await getTrainingCards();
 
   return (
     <main className="space-y-6">
@@ -19,7 +19,7 @@ export default async function TrainingPage() {
           Back to dashboard
         </Link>
       </div>
-      <TrainingDrill card={card} />
+      <TrainingDrill cards={cards} />
     </main>
   );
 }

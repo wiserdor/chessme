@@ -9,6 +9,7 @@ export function UnlockAICoachCard(props: {
   compact?: boolean;
   ctaLabel?: string;
   className?: string;
+  helperText?: string;
 }) {
   return (
     <div className={`tone-info rounded-[24px] p-5 ${props.className ?? ""}`.trim()}>
@@ -28,7 +29,9 @@ export function UnlockAICoachCard(props: {
         <Link className="btn-primary w-full text-sm sm:w-auto" href="/settings#ai-coach">
           {props.ctaLabel ?? "Unlock AI coach"}
         </Link>
-        <p className="text-xs text-muted">Stored only in your local app settings. Used only when you run AI coaching features.</p>
+        <p className="text-xs text-muted">
+          {props.helperText ?? "Stored only in your local app settings. Used only when you run AI coaching features."}
+        </p>
       </div>
     </div>
   );

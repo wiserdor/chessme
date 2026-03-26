@@ -6,6 +6,7 @@ import Script from "next/script";
 import {
   BrandKnightIcon,
 } from "@/components/app-icons";
+import { ProfileSwitcher } from "@/components/profile-switcher";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
 import "@/app/globals.css";
@@ -66,7 +67,10 @@ export default function RootLayout(props: Readonly<{ children: React.ReactNode }
                 </Link>
                 <SiteNav items={navLinks} />
               </div>
-              <ThemeToggle />
+              <div className="flex items-center gap-3 self-start">
+                <ProfileSwitcher />
+                <ThemeToggle />
+              </div>
             </div>
           </header>
           {props.children}

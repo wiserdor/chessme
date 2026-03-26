@@ -24,7 +24,7 @@ async function ensureQueueRunning() {
   }
 
   if (activeJob.status === "running") {
-    await resetAnalyzingGamesToPending();
+    await resetAnalyzingGamesToPending(activeJob.profileUsername);
     await updateAnalysisJob(activeJob.id, {
       status: "pending",
       message: "Resuming analysis after restart",
@@ -59,7 +59,12 @@ async function processQueue() {
       });
 
       try {
-        const plannedGames = await getGamesToAnalyze(job.options.gameIds, job.options.limit ?? 20, job.options.reanalyze ?? false);
+        const plannedGames = await getGamesToAnalyze(
+          job.options.gameIds,
+          job.options.limit ?? 20,
+          job.options.reanalyze ?? false,
+          job.options.profileUsername
+        );
         plannedGameIds = plannedGames.map((game) => game.id);
         await updateAnalysisJob(job.id, {
           totalGames: plannedGames.length,
@@ -80,7 +85,7 @@ async function processQueue() {
           continue;
         }
 
-        await setGamesAnalysisStatus(plannedGameIds, "analyzing");
+        await setGamesAnalysisStatus(plannedGameIds, "analyzing", job.options.profileUsername);
 
         const result = await runAnalysis(
           {
@@ -121,9 +126,9 @@ async function processQueue() {
         });
       } catch (error) {
         const fallbackLimit = plannedGameIds.length || job.options.limit || 20;
-        const plannedGames = await getGamesToAnalyze(plannedGameIds, fallbackLimit, true);
+        const plannedGames = await getGamesToAnalyze(plannedGameIds, fallbackLimit, true, job.options.profileUsername);
         const analyzingIds = plannedGames.filter((game) => game.analysisStatus === "analyzing").map((game) => game.id);
-        await setGamesAnalysisStatus(analyzingIds, "pending");
+        await setGamesAnalysisStatus(analyzingIds, "pending", job.options.profileUsername);
         await updateAnalysisJob(job.id, {
           status: "failed",
           message: null,
@@ -137,7 +142,7 @@ async function processQueue() {
 }
 
 export async function enqueueAnalysisJob(options?: AnalysisJobInput) {
-  const activeJob = await getActiveAnalysisJob();
+  const activeJob = await getActiveAnalysisJob(options?.profileUsername);
   if (activeJob) {
     await ensureQueueRunning();
     const refreshedJob = await getActiveAnalysisJob();
@@ -152,7 +157,12 @@ export async function enqueueAnalysisJob(options?: AnalysisJobInput) {
     };
   }
 
-  const plannedGames = await getGamesToAnalyze(options?.gameIds, options?.limit ?? 20, options?.reanalyze ?? false);
+  const plannedGames = await getGamesToAnalyze(
+    options?.gameIds,
+    options?.limit ?? 20,
+    options?.reanalyze ?? false,
+    options?.profileUsername
+  );
   if (!plannedGames.length) {
     return {
       jobId: null,

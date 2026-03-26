@@ -70,6 +70,7 @@ export function DashboardOverview(props: { snapshot: DashboardSnapshot }) {
               "Get leak explanations tied to your own positions",
               "Build a style report from your latest 20-30 games"
             ]}
+            helperText="Open Settings -> AI coach to see the step-by-step token guide, then choose OpenAI, paste your token, and save. It stays local to this device."
           />
         ) : null}
         <div className="surface-soft p-5 text-sm leading-6 text-muted-strong">

@@ -5,6 +5,13 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
+import {
+  appendCoachExchange,
+  getCoachMessages,
+  getPrivateAIConfig,
+  getStoredActiveProfile,
+  searchPrivateNotes
+} from "@/lib/client/private-store";
 
 type CriticalMomentOption = {
   ply: number;
@@ -45,9 +52,12 @@ export function GameCoachChat(props: {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>(props.initialMessages);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hasLocalApiKey, setHasLocalApiKey] = useState(props.hasApiKey);
+  const [settings, setSettings] = useState<{ provider: "openai" | "mock"; model: string; apiKey?: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [internalFocusPly, setInternalFocusPly] = useState<number | "">(props.criticalMoments[0]?.ply ?? "");
   const focusPly = typeof props.currentFocusPly === "number" ? props.currentFocusPly : internalFocusPly;
+
   const focusOptions = useMemo(() => {
     const options = props.criticalMoments.map((moment) => ({
       ply: moment.ply,
@@ -66,6 +76,7 @@ export function GameCoachChat(props: {
 
     return options;
   }, [props.criticalMoments, props.currentFocusPly, props.focusLabel]);
+
   const moveContextByPly = useMemo(
     () => new Map(props.moveContexts.map((move) => [move.ply, move])),
     [props.moveContexts]
@@ -76,6 +87,53 @@ export function GameCoachChat(props: {
       setInternalFocusPly(props.currentFocusPly);
     }
   }, [props.currentFocusPly]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocalState() {
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const [config, storedMessages] = await Promise.all([
+        getPrivateAIConfig(),
+        getCoachMessages(profileUsername, props.gameId)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      const localHasApiKey = config.provider === "openai" && Boolean(config.apiKey);
+      setHasLocalApiKey(localHasApiKey);
+      setSettings(
+        localHasApiKey
+          ? {
+              provider: "openai",
+              model: config.model,
+              apiKey: config.apiKey ?? undefined
+            }
+          : null
+      );
+
+      if (storedMessages.length) {
+        setMessages(
+          storedMessages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            focusPly: message.focusPly ?? null
+          }))
+        );
+      }
+    }
+
+    void loadLocalState();
+    const reloadMessages = () => void loadLocalState();
+    window.addEventListener("private-game-review-updated", reloadMessages);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("private-game-review-updated", reloadMessages);
+    };
+  }, [props.gameId, props.hasApiKey]);
 
   function updateFocusPly(next: number | undefined) {
     const value = typeof next === "number" ? next : "";
@@ -92,6 +150,11 @@ export function GameCoachChat(props: {
         return;
       }
 
+      if (!settings?.apiKey) {
+        setNotice("Add your OpenAI token in Settings before using coach chat.");
+        return;
+      }
+
       const optimisticKey = `pending-${Date.now()}`;
       setMessages((current) => [
         ...current,
@@ -105,12 +168,31 @@ export function GameCoachChat(props: {
       setQuestion("");
 
       try {
+        const profileUsername = getStoredActiveProfile() ?? "default";
+        const relevantNotes = await searchPrivateNotes(profileUsername, {
+          gameId: props.gameId,
+          ...(typeof focusPly === "number" ? { ply: focusPly } : {}),
+          limit: 5
+        });
+
         const response = await fetch(`/api/games/${props.gameId}/coach-chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             question: trimmed,
-            focusPly: typeof focusPly === "number" ? focusPly : undefined
+            focusPly: typeof focusPly === "number" ? focusPly : undefined,
+            history: messages.slice(-10).map((message) => ({
+              role: message.role,
+              content: message.content,
+              focusPly: message.focusPly ?? null
+            })),
+            notes: relevantNotes.slice(0, 5).map((note) => ({
+              title: note.title,
+              excerpt: note.excerpt,
+              anchorLabel: note.anchorLabel,
+              tags: [...note.manualTags, ...note.derivedTags].slice(0, 6)
+            })),
+            settings
           })
         });
         const payload = (await response.json().catch(() => ({}))) as {
@@ -125,19 +207,21 @@ export function GameCoachChat(props: {
           return;
         }
 
-        setMessages((current) => [
-          ...current.filter((message) => message.id !== optimisticKey),
-          {
-            role: "user",
-            content: trimmed,
-            focusPly: typeof focusPly === "number" ? focusPly : null
-          },
-          {
-            role: "coach",
-            content: payload.answer as string,
-            focusPly: typeof focusPly === "number" ? focusPly : null
-          }
-        ]);
+        await appendCoachExchange(profileUsername, props.gameId, {
+          question: trimmed,
+          answer: payload.answer,
+          focusPly: typeof focusPly === "number" ? focusPly : null
+        });
+
+        const nextMessages = await getCoachMessages(profileUsername, props.gameId);
+        setMessages(
+          nextMessages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            focusPly: message.focusPly ?? null
+          }))
+        );
       } catch {
         setMessages((current) => current.filter((message) => message.id !== optimisticKey));
         setNotice("Could not reach the coach. Please try again.");
@@ -151,7 +235,9 @@ export function GameCoachChat(props: {
         <div>
           <span className="badge">Coach Chat</span>
           <h3 className="mt-3 font-display text-xl sm:text-2xl">Ask your trainer about this move</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Grounded only in this analyzed game and the selected position.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+            Grounded only in this analyzed game, your saved notes, and the selected position.
+          </p>
         </div>
         <div className="w-full min-w-0 sm:w-auto sm:min-w-[220px]">
           <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="coach-focus-ply">
@@ -181,13 +267,11 @@ export function GameCoachChat(props: {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
             Coach focus follows the selected move
           </p>
-          <p className="mt-1 text-sm text-muted-strong">
-            Questions now apply to ply {focusPly}.
-          </p>
+          <p className="mt-1 text-sm text-muted-strong">Questions now apply to ply {focusPly}.</p>
         </div>
       ) : null}
 
-      {!props.hasApiKey ? (
+      {!hasLocalApiKey ? (
         <div className="mt-4">
           <UnlockAICoachCard
             compact
@@ -207,7 +291,7 @@ export function GameCoachChat(props: {
           <button
             key={item}
             className="btn-secondary justify-start px-3 py-2 text-left text-xs uppercase tracking-[0.12em]"
-            disabled={isPending || !props.hasApiKey}
+            disabled={isPending || !hasLocalApiKey}
             onClick={() => submit(item)}
             type="button"
           >
@@ -249,6 +333,7 @@ export function GameCoachChat(props: {
                         buttonClassName="btn-ghost px-3 py-2 text-[11px] uppercase tracking-[0.12em]"
                         dialogTitle="Save coach answer as note"
                         initialBody={message.content}
+                        profileUsername={getStoredActiveProfile() ?? "default"}
                         context={{
                           anchorType: typeof message.focusPly === "number" ? "move" : "game",
                           anchorLabel:
@@ -261,7 +346,10 @@ export function GameCoachChat(props: {
                               : `/games/${props.gameId}#review-coach`,
                           gameId: props.gameId,
                           ply: typeof message.focusPly === "number" ? message.focusPly : undefined,
-                          fen: typeof message.focusPly === "number" ? moveContextByPly.get(message.focusPly)?.fenAfter : undefined,
+                          fen:
+                            typeof message.focusPly === "number"
+                              ? moveContextByPly.get(message.focusPly)?.fenAfter
+                              : undefined,
                           opening: props.opening,
                           coachMessageContext: "game-coach"
                         }}
@@ -279,7 +367,9 @@ export function GameCoachChat(props: {
               Good prompts: why it was bad, what you missed, what to think next time, or what training task comes out
               of this position.
             </p>
-            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-muted">Your coach thread is saved for this game.</p>
+            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-muted">
+              Your coach thread is saved locally for this game.
+            </p>
           </div>
         )}
 
@@ -293,17 +383,17 @@ export function GameCoachChat(props: {
           <textarea
             className="field-area min-h-24 rounded-[20px]"
             placeholder={
-              props.hasApiKey
+              hasLocalApiKey
                 ? "Ask the coach about this game..."
                 : "Unlock AI coach in Settings to ask about this move, this position, or the whole game..."
             }
-            disabled={!props.hasApiKey}
+            disabled={!hasLocalApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             {notice ? <p className="text-xs text-[color:var(--error-text)]">{notice}</p> : <span />}
-            {props.hasApiKey ? (
+            {hasLocalApiKey ? (
               <button className="btn-primary text-sm" disabled={isPending} type="submit">
                 {isPending ? "Thinking..." : "Ask coach"}
               </button>

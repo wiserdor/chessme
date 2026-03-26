@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 import { CoachLabChat } from "@/components/coach-lab-chat";
+import { CoachLabReportSection } from "@/components/coach-lab-report-section";
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { NotesPanel } from "@/components/notes-panel";
-import { RecentReportAction } from "@/components/recent-report-action";
 import { getRecentGamesPortfolioReport } from "@/lib/services/ai-enrichment";
 import { loadCoachLab } from "@/lib/services/coach-lab";
 import { getAISettings, getRecentGamesForPortfolioReview } from "@/lib/services/repository";
@@ -20,19 +20,6 @@ function blindspotTone(index: number) {
   ];
 
   return tones[index] ?? tones[tones.length - 1];
-}
-
-function reportTone(key: "style" | "strength" | "leak" | "priority") {
-  switch (key) {
-    case "style":
-      return "tone-info";
-    case "strength":
-      return "tone-success";
-    case "leak":
-      return "tone-danger";
-    case "priority":
-      return "tone-warning";
-  }
 }
 
 function scoreFromResult(result: string) {
@@ -98,37 +85,6 @@ function buildTrendSnapshot(sample: Awaited<ReturnType<typeof getRecentGamesForP
       `Stable games (150cp or less biggest swing): ${earlierStableRate}% earlier -> ${recentStableRate}% recent`
     ]
   };
-}
-
-function formatUpdatedAt(value: number) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown time";
-  }
-
-  return date.toLocaleString();
-}
-
-function StatCard(props: { label: string; value: number; tone: string }) {
-  return (
-    <div className={`rounded-[22px] p-4 ${props.tone}`}>
-      <p className="text-xs uppercase tracking-[0.12em] text-muted">{props.label}</p>
-      <p className="mt-2 font-display text-3xl">{props.value}</p>
-    </div>
-  );
-}
-
-function ReportSection(props: { title: string; items: string[]; tone: string }) {
-  return (
-    <article className={`rounded-[24px] p-5 ${props.tone}`}>
-      <h2 className="font-display text-2xl">{props.title}</h2>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-strong">
-        {props.items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </article>
-  );
 }
 
 export default async function CoachLabPage() {
@@ -279,125 +235,12 @@ export default async function CoachLabPage() {
         </div>
       </section>
 
-      <section className="panel" id="style-report">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <span className="badge">Style Report</span>
-            <h2 className="panel-title mt-3">Last 30 games</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Use ChatGPT on up to your 30 most recent analyzed games for a broader style diagnosis and improvement
-              plan.
-            </p>
-          </div>
-          <div className="w-full space-y-3 text-left sm:w-auto sm:text-right">
-            <p className="text-sm text-muted">Analyzed games available: {reportSample.sampleSize}</p>
-            <RecentReportAction hasReport={Boolean(report?.payload)} gamesAvailable={reportSample.sampleSize} hasApiKey={aiSettings.hasApiKey} />
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Games in sample" value={reportSample.sampleSize} tone="tone-neutral" />
-          <StatCard label="Wins" value={reportSample.results.win} tone="tone-success" />
-          <StatCard label="Losses" value={reportSample.results.loss} tone="tone-danger" />
-          <StatCard label="Draws" value={reportSample.results.draw} tone="tone-warning" />
-        </div>
-
-        {reportSample.leakLabels.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {reportSample.leakLabels.map((leak) => (
-              <Link
-                key={leak.label}
-                className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700"
-                href={
-                  leak.label === "Opening leaks"
-                    ? "/leaks/opening-leaks"
-                    : leak.label === "Tactical oversights"
-                      ? "/leaks/tactical-oversights"
-                      : leak.label === "Large blunders"
-                        ? "/leaks/large-blunders"
-                        : leak.label === "Endgame conversion"
-                          ? "/leaks/endgame-conversion"
-                          : "/leaks/decision-drift"
-                }
-              >
-                {leak.label} ({leak.count})
-              </Link>
-            ))}
-          </div>
-        ) : null}
-
-        {trend ? (
-          <div className="tone-neutral mt-6 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Trend</p>
-                <h3 className="mt-2 font-display text-2xl">Improvement over the last 20 games</h3>
-                <p className="mt-2 text-sm text-muted">{trend.summary}</p>
-              </div>
-              <div
-                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
-                  trend.direction === "up"
-                    ? "bg-emerald-500/12 text-[color:var(--success-text)]"
-                    : trend.direction === "down"
-                      ? "bg-rose-500/12 text-[color:var(--error-text)]"
-                      : "bg-slate-500/12 text-muted-strong"
-                }`}
-              >
-                {trend.direction === "up" ? "Improving" : trend.direction === "down" ? "Needs correction" : "Mostly flat"}
-              </div>
-            </div>
-            <ul className="mt-4 space-y-2 text-sm leading-6 text-muted-strong">
-              {trend.bullets.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {report?.payload ? (
-          <>
-            <div className="surface-card mt-6 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Latest report</p>
-                  <h3 className="mt-2 font-display text-2xl">{report.title}</h3>
-                  <p className="mt-2 text-sm text-muted">{report.payload.summary}</p>
-                </div>
-                <div className="text-right text-sm text-muted">
-                  <p>{report.gamesCount} games used</p>
-                  <p>{report.model}</p>
-                  <p>{formatUpdatedAt(report.updatedAt)}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-6 xl:grid-cols-2">
-              <ReportSection title="Style profile" items={report.payload.styleProfile} tone={reportTone("style")} />
-              <ReportSection title="Strengths to keep" items={report.payload.strengths} tone={reportTone("strength")} />
-              <ReportSection title="Recurring leaks" items={report.payload.recurringLeaks} tone={reportTone("leak")} />
-              <ReportSection title="Improvement priorities" items={report.payload.improvementPriorities} tone={reportTone("priority")} />
-            </div>
-
-            <div className="tone-neutral mt-6 p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Training plan</p>
-              <h3 className="mt-2 font-display text-2xl">How to make your style better</h3>
-              <ul className="mt-4 space-y-2 text-sm leading-6 text-muted-strong">
-                {report.payload.trainingPlan.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <p className="mt-4 text-xs uppercase tracking-[0.12em] text-muted">
-                ChatGPT confidence {Math.round(report.payload.confidence * 100)}%
-              </p>
-            </div>
-          </>
-        ) : (
-          <div className="mt-6 surface-soft p-5 text-sm leading-6 text-muted-strong">
-            No style report yet. Generate one from your analyzed games when you want a broader identity-level coaching
-            summary.
-          </div>
-        )}
-      </section>
+      <CoachLabReportSection
+        initialReport={report}
+        reportSample={reportSample}
+        trend={trend}
+        hasApiKey={aiSettings.hasApiKey}
+      />
 
       <section className="panel">
         <span className="badge">Critical Moments</span>

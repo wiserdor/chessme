@@ -3,6 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { ProfileBrowser } from "@/components/profile-browser";
+import { getPrivateAIConfig, getPrivateGameAIReview, savePrivateGameAIReview } from "@/lib/client/private-store";
+
 type Notice = {
   type: "success" | "error";
   message: string;
@@ -16,6 +19,16 @@ type AnalysisJobState = {
   message: string | null;
 };
 
+type PrivateAIEnrichmentState = {
+  status: "idle" | "running" | "completed" | "failed";
+  totalGames: number;
+  processedGames: number;
+  enrichedGames: number;
+  skippedGames: number;
+  failedGames: number;
+  message: string | null;
+};
+
 type DateRangePreset =
   | "last-3-months"
   | "last-6-months"
@@ -24,7 +37,8 @@ type DateRangePreset =
   | "all-time"
   | "custom";
 
-const DASHBOARD_ANALYZE_LIMIT = 20;
+const DEFAULT_ANALYZE_LIMIT = 10;
+const MAX_ANALYZE_LIMIT = 30;
 
 async function parseJson(response: Response) {
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -134,23 +148,38 @@ function analysisStatusDetail(job: AnalysisJobState) {
   return "Analysis in progress.";
 }
 
+function aiEnrichmentProgress(state: PrivateAIEnrichmentState | null) {
+  if (!state) {
+    return 0;
+  }
+
+  if (state.totalGames <= 0) {
+    return 0;
+  }
+
+  return Math.max(8, Math.min(100, Math.round((state.processedGames / state.totalGames) * 100)));
+}
+
 export function DashboardActions(props: {
-  defaultUsername?: string;
+  activeUsername?: string;
   initialAnalysisJob?: AnalysisJobState | null;
 }) {
   const router = useRouter();
   const [notice, setNotice] = useState<Notice | null>(null);
   const [toast, setToast] = useState<Notice | null>(null);
-  const [username, setUsername] = useState(props.defaultUsername ?? "");
   const [rangePreset, setRangePreset] = useState<DateRangePreset>("last-12-months");
   const [syncFrom, setSyncFrom] = useState(buildPresetRange("last-12-months").from);
   const [syncTo, setSyncTo] = useState(buildPresetRange("last-12-months").to);
+  const [analyzeLimit, setAnalyzeLimit] = useState(String(DEFAULT_ANALYZE_LIMIT));
   const [pgnText, setPgnText] = useState("");
   const [analysisJob, setAnalysisJob] = useState<AnalysisJobState | null>(props.initialAnalysisJob ?? null);
+  const [plannedGameIds, setPlannedGameIds] = useState<string[]>([]);
+  const [privateAIEnrichment, setPrivateAIEnrichment] = useState<PrivateAIEnrichmentState | null>(null);
   const [isPending, startTransition] = useTransition();
   const isAnalyzingInBackground = Boolean(
     analysisJob && (analysisJob.status === "pending" || analysisJob.status === "running")
   );
+  const isPrivateAIEnriching = privateAIEnrichment?.status === "running";
 
   useEffect(() => {
     if (!toast) {
@@ -204,9 +233,11 @@ export function DashboardActions(props: {
       if (payload.job.status === "completed") {
         window.clearInterval(timer);
         setAnalysisJob(null);
+        const completionMessage = payload.job.message || "Analysis complete.";
+        void maybeStartPrivateAIEnrichment(plannedGameIds);
         const nextNotice = {
           type: "success",
-          message: payload.job.message || "Analysis complete."
+          message: completionMessage
         } as const;
         setNotice(nextNotice);
         setToast(nextNotice);
@@ -214,6 +245,7 @@ export function DashboardActions(props: {
       } else if (payload.job.status === "failed") {
         window.clearInterval(timer);
         setAnalysisJob(null);
+        setPlannedGameIds([]);
         const nextNotice = {
           type: "error",
           message: payload.job.error || "Analysis failed."
@@ -227,11 +259,20 @@ export function DashboardActions(props: {
     return () => {
       window.clearInterval(timer);
     };
-  }, [analysisJob, router]);
+  }, [analysisJob, plannedGameIds, router]);
+
+  function parsedAnalyzeLimit() {
+    const parsed = Number.parseInt(analyzeLimit, 10);
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_ANALYZE_LIMIT;
+    }
+
+    return Math.max(1, Math.min(MAX_ANALYZE_LIMIT, parsed));
+  }
 
   function validateSyncInputs() {
-    if (!username.trim()) {
-      throw new Error("Chess.com username is required.");
+    if (!props.activeUsername?.trim()) {
+      throw new Error("Choose a Chess.com profile first.");
     }
 
     if (syncFrom && syncTo && syncFrom > syncTo) {
@@ -239,12 +280,183 @@ export function DashboardActions(props: {
     }
   }
 
-  async function startAnalysisJob(limit = DASHBOARD_ANALYZE_LIMIT): Promise<string> {
+  async function fetchPendingGameIds(limit: number) {
+    const activeUsername = props.activeUsername?.trim();
+    if (!activeUsername) {
+      throw new Error("Choose a Chess.com profile first.");
+    }
+
+    const response = await fetch(
+      `/api/public/profiles/${encodeURIComponent(activeUsername)}/games?status=pending&limit=${limit}`,
+      { cache: "no-store" }
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      history?: {
+        games?: Array<{ id: string }>;
+      };
+    };
+
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || "Could not load pending games.");
+    }
+
+    return (payload.history?.games ?? []).map((game) => game.id).filter(Boolean);
+  }
+
+  async function maybeStartPrivateAIEnrichment(gameIds: string[]) {
+    const activeUsername = props.activeUsername?.trim();
+    if (!activeUsername || !gameIds.length) {
+      setPlannedGameIds([]);
+      return;
+    }
+
+    const config = await getPrivateAIConfig();
+    if (config.provider !== "openai" || !config.apiKey) {
+      setPlannedGameIds([]);
+      return;
+    }
+
+    setPrivateAIEnrichment({
+      status: "running",
+      totalGames: gameIds.length,
+      processedGames: 0,
+      enrichedGames: 0,
+      skippedGames: 0,
+      failedGames: 0,
+      message: "ChatGPT coach is enriching the analyzed batch on this device."
+    });
+
+    let enrichedGames = 0;
+    let skippedGames = 0;
+    let failedGames = 0;
+
+    for (let index = 0; index < gameIds.length; index += 1) {
+      const gameId = gameIds[index] as string;
+
+      setPrivateAIEnrichment({
+        status: "running",
+        totalGames: gameIds.length,
+        processedGames: index,
+        enrichedGames,
+        skippedGames,
+        failedGames,
+        message: `ChatGPT coach is enriching game ${index + 1} of ${gameIds.length}.`
+      });
+
+      const existing = await getPrivateGameAIReview(activeUsername, gameId);
+      if (existing) {
+        skippedGames += 1;
+        setPrivateAIEnrichment({
+          status: "running",
+          totalGames: gameIds.length,
+          processedGames: index + 1,
+          enrichedGames,
+          skippedGames,
+          failedGames,
+          message: `Skipped ${skippedGames} games that already had a local ChatGPT review.`
+        });
+        continue;
+      }
+
+      const response = await fetch(`/api/games/${gameId}/ai-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force: false,
+          settings: {
+            provider: "openai",
+            model: config.model,
+            apiKey: config.apiKey
+          }
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        updated?: boolean;
+        message?: string;
+        review?: {
+          summary: string;
+          coachingNotes: string[];
+          actionItems: string[];
+          confidence: number;
+        };
+        criticalMoments?: Array<{
+          ply: number;
+          label: string;
+          whatHappened: string;
+          whyItMatters: string;
+          whatToThink: string;
+          trainingFocus: string;
+          confidence: number;
+        }>;
+        provider?: string;
+        model?: string;
+      };
+
+      if (!response.ok || payload.ok === false || !payload.review) {
+        failedGames += 1;
+      } else {
+        await savePrivateGameAIReview(activeUsername, gameId, {
+          review: payload.review,
+          criticalMoments: payload.criticalMoments ?? [],
+          provider: payload.provider || "openai",
+          model: payload.model || config.model
+        });
+        enrichedGames += 1;
+      }
+
+      setPrivateAIEnrichment({
+        status: "running",
+        totalGames: gameIds.length,
+        processedGames: index + 1,
+        enrichedGames,
+        skippedGames,
+        failedGames,
+        message:
+          failedGames > 0
+            ? `ChatGPT enriched ${enrichedGames} games. ${failedGames} failed and can be retried from the game page.`
+            : `ChatGPT enriched ${enrichedGames} games so far.`
+      });
+
+      if (index < gameIds.length - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+      }
+    }
+
+    window.dispatchEvent(new Event("private-game-review-updated"));
+    setPlannedGameIds([]);
+    const finalMessage =
+      failedGames > 0
+        ? `ChatGPT coach finished: ${enrichedGames} enriched, ${skippedGames} skipped, ${failedGames} failed.`
+        : `ChatGPT coach finished: ${enrichedGames} enriched, ${skippedGames} skipped.`;
+    const finalState: PrivateAIEnrichmentState = {
+      status: failedGames > 0 ? "failed" : "completed",
+      totalGames: gameIds.length,
+      processedGames: gameIds.length,
+      enrichedGames,
+      skippedGames,
+      failedGames,
+      message: finalMessage
+    };
+    setPrivateAIEnrichment(finalState);
+    const nextNotice: Notice = {
+      type: failedGames > 0 ? "error" : "success",
+      message: finalMessage
+    };
+    setNotice(nextNotice);
+    setToast(nextNotice);
+    router.refresh();
+  }
+
+  async function startAnalysisJob(limit = DEFAULT_ANALYZE_LIMIT, gameIds?: string[]): Promise<string> {
     const payload = await parseJson(
       await fetch("/api/analysis/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit })
+        body: JSON.stringify({ limit, gameIds })
       })
     );
 
@@ -256,9 +468,12 @@ export function DashboardActions(props: {
 
     if (!jobId) {
       setAnalysisJob(null);
+      setPlannedGameIds([]);
       return message;
     }
 
+    setPrivateAIEnrichment(null);
+    setPlannedGameIds(gameIds ?? []);
     setAnalysisJob({
       id: jobId,
       status: typeof payload.status === "string" ? payload.status : "pending",
@@ -272,13 +487,17 @@ export function DashboardActions(props: {
 
   async function runSync(analyzeAfter: boolean): Promise<string> {
     validateSyncInputs();
+    const activeUsername = props.activeUsername?.trim();
+    if (!activeUsername) {
+      throw new Error("Choose a Chess.com profile first.");
+    }
 
     const importPayload = await parseJson(
       await fetch("/api/import/chesscom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: username.trim(),
+          username: activeUsername,
           from: toApiMonth(syncFrom),
           to: toApiMonth(syncTo)
         })
@@ -290,7 +509,8 @@ export function DashboardActions(props: {
       return imported === null ? "Sync complete." : `Sync complete. Imported ${imported} games.`;
     }
 
-    const queued = await startAnalysisJob(DASHBOARD_ANALYZE_LIMIT);
+    const gameIds = await fetchPendingGameIds(parsedAnalyzeLimit());
+    const queued = await startAnalysisJob(gameIds.length || parsedAnalyzeLimit(), gameIds);
     const imported = typeof importPayload.imported === "number" ? importPayload.imported : null;
     return imported === null ? queued : `Imported ${imported} games. ${queued}`;
   }
@@ -321,44 +541,64 @@ export function DashboardActions(props: {
   }
 
   return (
-    <section className="panel space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="panel space-y-5" id="control-room">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="badge">Control Room</span>
-          <h2 className="panel-title mt-3">Sync and analyze</h2>
+          <h2 className="panel-title mt-3">Start here: choose a profile, sync games, then analyze them</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+            If someone opens the app for the first time, this is the full path: pick the Chess.com profile you want to
+            work on, sync a date range, then analyze a first batch of games. Start with 10 analyzed games, then raise
+            it to 20 or 30 when you want a bigger review pass.
+          </p>
         </div>
-        <button
-          className="btn-secondary w-full px-5 py-3 text-sm sm:w-auto"
-          disabled={isPending || isAnalyzingInBackground}
-          onClick={() =>
-            runAction(async () => {
-              return startAnalysisJob(DASHBOARD_ANALYZE_LIMIT);
-            }, { refreshOnSuccess: false })
-          }
-        >
-          {isPending || isAnalyzingInBackground ? "Analysis in progress" : "Analyze existing only"}
-        </button>
+        <div className="surface-soft px-4 py-3 text-sm text-muted-strong">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Active profile</p>
+          <p className="mt-1 font-semibold text-[color:var(--text)]">{props.activeUsername || "Pick a profile below"}</p>
+          <p className="mt-1 text-xs text-muted">Recommended first run: sync recent games, then analyze 10.</p>
+        </div>
       </div>
 
-      {notice ? (
-        <p
-          className={notice.type === "success" ? "status-success" : "status-error"}
-        >
-          {notice.message}
-        </p>
-      ) : null}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="tone-info p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Step 1</p>
+          <p className="mt-2 text-sm font-semibold">Pick the profile you want to coach</p>
+          <p className="mt-2 text-sm leading-6 text-muted-strong">
+            Open a public Chess.com profile to make it the active workspace for sync, analysis, notes, and training.
+          </p>
+        </div>
+        <div className="tone-neutral p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Step 2</p>
+          <p className="mt-2 text-sm font-semibold">Sync a manageable date range first</p>
+          <p className="mt-2 text-sm leading-6 text-muted-strong">
+            Start with the last 3 to 12 months so the import stays fast and easier to review.
+          </p>
+        </div>
+        <div className="tone-warning p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Step 3</p>
+          <p className="mt-2 text-sm font-semibold">Analyze 10 games to get the first real leaks</p>
+          <p className="mt-2 text-sm leading-6 text-muted-strong">
+            Ten games is usually enough to surface meaningful patterns without creating a long first queue.
+          </p>
+        </div>
+      </div>
+
+      <ProfileBrowser activeUsername={props.activeUsername} embedded />
+
+      {notice ? <p className={notice.type === "success" ? "status-success" : "status-error"}>{notice.message}</p> : null}
+
       {analysisJob ? (
         <div className="status-info space-y-3 rounded-[24px] px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-medium">{analysisStatusDetail(analysisJob)}</p>
               {analysisJob.totalGames > 0 && analysisJob.processedGames === 0 ? (
-                <p className="mt-1 text-xs opacity-80">The server is still setting up the first game. Progress starts after the first finished game.</p>
+                <p className="mt-1 text-xs opacity-80">
+                  The server is still setting up the first game. Progress starts after the first finished game.
+                </p>
               ) : null}
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em]">
-              {analysisStatusLabel(analysisJob)}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em]">{analysisStatusLabel(analysisJob)}</p>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-blue-500/15">
             <div
@@ -369,49 +609,68 @@ export function DashboardActions(props: {
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <form
-          className="surface-soft p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            runAction(async () => {
-              await parseJson(
-                await fetch("/api/profile/chesscom/connect", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ username })
-                })
-              );
-              return "Profile saved.";
-            });
-          }}
+      {privateAIEnrichment ? (
+        <div
+          className={`space-y-3 rounded-[24px] px-4 py-4 ${
+            privateAIEnrichment.status === "failed" ? "status-error" : "status-info"
+          }`}
         >
-          <h3 className="font-display text-xl">Connect Chess.com</h3>
-          <p className="mt-2 text-sm text-muted">Save your default username and AI settings profile.</p>
-          <input
-            className="field mt-4"
-            placeholder="username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-          <button className="btn-primary mt-4 w-full sm:w-auto" disabled={isPending}>
-            Save profile
-          </button>
-        </form>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium">
+                {privateAIEnrichment.message || "ChatGPT coach is enriching your analyzed games on this device."}
+              </p>
+              <p className="mt-1 text-xs opacity-80">
+                This second phase uses your local token and skips games that already have a saved ChatGPT review.
+              </p>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em]">
+              {privateAIEnrichment.processedGames}/{privateAIEnrichment.totalGames} games
+            </p>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-blue-500/15">
+            <div
+              className="h-full rounded-full bg-[color:var(--primary)] transition-all duration-300"
+              style={{ width: `${aiEnrichmentProgress(privateAIEnrichment)}%` }}
+            />
+          </div>
+          <p className="text-xs opacity-80">
+            Enriched {privateAIEnrichment.enrichedGames}, skipped {privateAIEnrichment.skippedGames}, failed{" "}
+            {privateAIEnrichment.failedGames}.
+          </p>
+        </div>
+      ) : null}
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <form
           className="surface-card p-4"
           onSubmit={(event) => {
             event.preventDefault();
-            runAction(async () => runSync(true), { refreshOnSuccess: false });
+            runAction(async () => runSync(true));
           }}
         >
-          <h3 className="font-display text-xl">Sync + Analyze (recommended)</h3>
+          <h3 className="font-display text-xl">Step 2: Sync + Analyze</h3>
           <p className="mt-2 text-sm text-muted">
-            One click fetches games, then analyzes up to the first 20 pending games. Engine review runs per game, and
-            ChatGPT coaching is grouped into batched prompts to avoid token waste.
+            Fetch games for the active Chess.com profile, then analyze the first batch you choose below. Public engine
+            analysis stays on the server. Private AI coaching can happen later on this device.
           </p>
           <div className="mt-4 grid gap-3">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="analyze-limit">
+              Analyze up to
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                id="analyze-limit"
+                type="number"
+                min={1}
+                max={MAX_ANALYZE_LIMIT}
+                className="field-muted max-w-[120px]"
+                value={analyzeLimit}
+                onChange={(event) => setAnalyzeLimit(event.target.value)}
+              />
+              <p className="text-xs text-muted">Default 10, maximum 30 games per run.</p>
+            </div>
+
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="sync-preset">
               Range preset
             </label>
@@ -431,7 +690,7 @@ export function DashboardActions(props: {
             >
               <option value="last-3-months">Last 3 months</option>
               <option value="last-6-months">Last 6 months</option>
-              <option value="last-12-months">Last 12 months (default)</option>
+              <option value="last-12-months">Last 12 months</option>
               <option value="this-year">This year</option>
               <option value="all-time">All available</option>
               <option value="custom">Custom</option>
@@ -451,6 +710,7 @@ export function DashboardActions(props: {
                 setSyncFrom(event.target.value);
               }}
             />
+
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="sync-to">
               To month
             </label>
@@ -468,13 +728,16 @@ export function DashboardActions(props: {
             <p className="text-xs text-muted">
               Sent to API as `YYYY/MM`. Select "All available" to sync every published archive month.
             </p>
+            {!props.activeUsername ? (
+              <p className="rounded-[18px] border border-dashed border-[color:var(--border)] px-4 py-3 text-sm text-muted-strong">
+                Pick a profile in Step 1 first. Then sync and analyze will use that active username automatically.
+              </p>
+            ) : null}
           </div>
+
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <button
-              className="btn-primary w-full sm:w-auto"
-              disabled={isPending || isAnalyzingInBackground}
-            >
-              {isPending || isAnalyzingInBackground ? "Analysis in progress" : "Sync + Analyze"}
+            <button className="btn-primary w-full sm:w-auto" disabled={isPending || isAnalyzingInBackground}>
+              {isPending || isAnalyzingInBackground ? "Analysis in progress" : `Sync + Analyze (${parsedAnalyzeLimit()})`}
             </button>
             <button
               className="btn-secondary w-full sm:w-auto"
@@ -490,36 +753,61 @@ export function DashboardActions(props: {
           </div>
         </form>
 
-        <form
-          className="surface-contrast p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            runAction(async () => {
-              const payload = await parseJson(
-                await fetch("/api/import/pgn", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text: pgnText })
-                })
-              );
-              setPgnText("");
-              const imported = typeof payload.imported === "number" ? payload.imported : null;
-              return imported === null ? "PGN import complete." : `PGN import complete. Imported ${imported} games.`;
-            });
-          }}
-        >
-          <h3 className="font-display text-xl">PGN fallback</h3>
-          <p className="mt-2 text-sm opacity-75">Paste one or many games to import them without Chess.com sync.</p>
-          <textarea
-            className="field-area mt-4"
-            placeholder='[Event "Live Chess"]'
-            value={pgnText}
-            onChange={(event) => setPgnText(event.target.value)}
-          />
-          <button className="btn-secondary mt-4 w-full sm:w-auto" disabled={isPending}>
-            Import PGN
-          </button>
-        </form>
+        <div className="space-y-4">
+          <form
+            className="surface-card p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runAction(async () => {
+                const gameIds = await fetchPendingGameIds(parsedAnalyzeLimit());
+                return startAnalysisJob(gameIds.length || parsedAnalyzeLimit(), gameIds);
+              }, { refreshOnSuccess: false });
+            }}
+          >
+            <h3 className="font-display text-xl">Analyze existing games</h3>
+            <p className="mt-2 text-sm text-muted">
+              Use this when you already synced the profile and just want to analyze the next pending batch.
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              If your local OpenAI token is saved, ChatGPT coaching will start automatically after the engine pass
+              finishes.
+            </p>
+            <button className="btn-secondary mt-4 w-full sm:w-auto" disabled={isPending || isAnalyzingInBackground}>
+              {isPending || isAnalyzingInBackground ? "Analysis in progress" : `Analyze existing only (${parsedAnalyzeLimit()})`}
+            </button>
+          </form>
+
+          <form
+            className="surface-contrast p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runAction(async () => {
+                const payload = await parseJson(
+                  await fetch("/api/import/pgn", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: pgnText })
+                  })
+                );
+                setPgnText("");
+                const imported = typeof payload.imported === "number" ? payload.imported : null;
+                return imported === null ? "PGN import complete." : `PGN import complete. Imported ${imported} games.`;
+              });
+            }}
+          >
+            <h3 className="font-display text-xl">PGN fallback</h3>
+            <p className="mt-2 text-sm opacity-75">Paste one or many games to import them without Chess.com sync.</p>
+            <textarea
+              className="field-area mt-4"
+              placeholder='[Event "Live Chess"]'
+              value={pgnText}
+              onChange={(event) => setPgnText(event.target.value)}
+            />
+            <button className="btn-secondary mt-4 w-full sm:w-auto" disabled={isPending}>
+              Import PGN
+            </button>
+          </form>
+        </div>
       </div>
 
       {toast ? (
@@ -536,11 +824,7 @@ export function DashboardActions(props: {
               </p>
               <p className="mt-1 leading-6">{toast.message}</p>
             </div>
-            <button
-              className="btn-secondary px-2 py-1 text-xs"
-              onClick={() => setToast(null)}
-              type="button"
-            >
+            <button className="btn-secondary px-2 py-1 text-xs" onClick={() => setToast(null)} type="button">
               Close
             </button>
           </div>

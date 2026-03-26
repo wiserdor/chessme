@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
+import { createPrivateNote, getStoredActiveProfile, updatePrivateNote } from "@/lib/client/private-store";
 import type { NoteAnchorType, NoteRecord } from "@/lib/types";
 
 type NoteContext = {
@@ -68,6 +69,7 @@ export function NoteComposerTrigger(props: {
   initialManualTags?: string[];
   refreshOnSave?: boolean;
   onSaved?: () => void;
+  profileUsername?: string;
 }) {
   const context = useMemo(
     () => props.context ?? (props.existingNote ? contextFromNote(props.existingNote) : undefined),
@@ -81,6 +83,7 @@ export function NoteComposerTrigger(props: {
   const [tagInput, setTagInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const resolvedProfileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
 
   useEffect(() => {
     setIsMounted(true);
@@ -245,33 +248,22 @@ export function NoteComposerTrigger(props: {
                 }
 
                 try {
-                  const response = await fetch(props.existingNote ? `/api/notes/${props.existingNote.id}` : "/api/notes", {
-                    method: props.existingNote ? "PATCH" : "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(
-                      props.existingNote
-                        ? {
-                            title: title.trim() || undefined,
-                            body: body.trim(),
-                            manualTags: tags
-                          }
-                        : {
-                            title: title.trim() || undefined,
-                            body: body.trim(),
-                            manualTags: tags,
-                            ...context
-                          }
-                    )
-                  });
-
-                  const payload = (await response.json().catch(() => ({}))) as {
-                    ok?: boolean;
-                    error?: string;
-                  };
-
-                  if (!response.ok || payload.ok === false) {
-                    setNotice(payload.error || "Could not save note.");
-                    return;
+                  if (props.existingNote) {
+                    await updatePrivateNote(resolvedProfileUsername, props.existingNote.id, {
+                      title: title.trim() || undefined,
+                      body: body.trim(),
+                      manualTags: tags
+                    });
+                  } else {
+                    await createPrivateNote(resolvedProfileUsername, {
+                      title: title.trim() || undefined,
+                      body: body.trim(),
+                      manualTags: tags,
+                      ...(context ?? {
+                        anchorType: "general",
+                        sourcePath: "/notes"
+                      })
+                    });
                   }
 
                   window.dispatchEvent(new CustomEvent("notes-updated"));

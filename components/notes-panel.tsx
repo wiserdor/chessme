@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { NoteCard } from "@/components/note-card";
+import { getStoredActiveProfile, searchPrivateNotes } from "@/lib/client/private-store";
 import type { NoteRecord } from "@/lib/types";
 
 type SearchRequest = {
@@ -38,6 +39,7 @@ export function NotesPanel(props: {
   searches: SearchRequest[];
   emptyMessage: string;
   limit?: number;
+  profileUsername?: string;
 }) {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,17 +49,16 @@ export function NotesPanel(props: {
 
     async function load() {
       setLoading(true);
+      const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
 
       try {
         const results = await Promise.all(
-          props.searches.map(async (search) => {
-            const response = await fetch(`/api/notes/search?${toQueryString({ ...search, limit: search.limit ?? props.limit ?? 6 })}`, {
-              cache: "no-store"
-            });
-
-            const payload = (await response.json().catch(() => ({}))) as { notes?: NoteRecord[] };
-            return payload.notes ?? [];
-          })
+          props.searches.map((search) =>
+            searchPrivateNotes(profileUsername, {
+              ...search,
+              limit: search.limit ?? props.limit ?? 6
+            })
+          )
         );
 
         if (cancelled) {
@@ -109,7 +110,15 @@ export function NotesPanel(props: {
         {loading ? (
           <p className="surface-soft rounded-[18px] p-4 text-sm text-muted-strong">Loading notes...</p>
         ) : notes.length ? (
-          notes.map((note) => <NoteCard key={note.id} compact note={note} refreshOnChange={false} />)
+          notes.map((note) => (
+            <NoteCard
+              key={note.id}
+              compact
+              note={note}
+              profileUsername={props.profileUsername}
+              refreshOnChange={false}
+            />
+          ))
         ) : (
           <p className="surface-soft rounded-[18px] p-4 text-sm text-muted-strong">{props.emptyMessage}</p>
         )}

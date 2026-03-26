@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { GameCoachChat } from "@/components/game-coach-chat";
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { GameReviewBoard } from "@/components/game-review-board";
 import { NotesPanel } from "@/components/notes-panel";
+import { getPrivateGameAIReview, getStoredActiveProfile } from "@/lib/client/private-store";
 
 type MoveRow = {
   id: string;
@@ -73,6 +74,49 @@ export function GameReviewWorkspace(props: {
 }) {
   const defaultPly = props.initialPly ?? props.moves[0]?.ply;
   const [selectedPly, setSelectedPly] = useState<number | undefined>(defaultPly);
+  const [displayCriticalMoments, setDisplayCriticalMoments] = useState(props.criticalMoments);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocalReview() {
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const review = await getPrivateGameAIReview(profileUsername, props.gameId);
+      if (cancelled) {
+        return;
+      }
+
+      if (!review?.criticalMoments.length) {
+        setDisplayCriticalMoments(props.criticalMoments);
+        return;
+      }
+
+      const byPly = new Map(review.criticalMoments.map((moment) => [moment.ply, moment]));
+      setDisplayCriticalMoments(
+        props.criticalMoments.map((moment) => {
+          const localMoment = byPly.get(moment.ply);
+          return localMoment
+            ? {
+                ...moment,
+                whatHappened: localMoment.whatHappened,
+                whyItMatters: localMoment.whyItMatters,
+                whatToThink: localMoment.whatToThink,
+                trainingFocus: localMoment.trainingFocus,
+                aiAvailable: true
+              }
+            : moment;
+        })
+      );
+    }
+
+    void loadLocalReview();
+    const reload = () => void loadLocalReview();
+    window.addEventListener("private-game-review-updated", reload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("private-game-review-updated", reload);
+    };
+  }, [props.criticalMoments, props.gameId]);
 
   const focusLabel = useMemo(() => {
     const selectedMove = props.moves.find((move) => move.ply === selectedPly);
@@ -80,16 +124,18 @@ export function GameReviewWorkspace(props: {
       return undefined;
     }
 
-    const criticalMoment = props.criticalMoments.find((moment) => moment.ply === selectedMove.ply);
+    const criticalMoment = displayCriticalMoments.find((moment) => moment.ply === selectedMove.ply);
     return criticalMoment ? `${criticalMoment.label} • ${criticalMoment.deltaCp}cp` : `${selectedMove.san} selected`;
-  }, [props.criticalMoments, props.moves, selectedPly]);
+  }, [displayCriticalMoments, props.moves, selectedPly]);
+
   const selectedMove = useMemo(
     () => props.moves.find((move) => move.ply === selectedPly) ?? props.moves[0] ?? null,
     [props.moves, selectedPly]
   );
+
   const selectedCriticalMoment = useMemo(
-    () => props.criticalMoments.find((moment) => moment.ply === selectedMove?.ply) ?? null,
-    [props.criticalMoments, selectedMove]
+    () => displayCriticalMoments.find((moment) => moment.ply === selectedMove?.ply) ?? null,
+    [displayCriticalMoments, selectedMove]
   );
 
   return (
@@ -111,7 +157,7 @@ export function GameReviewWorkspace(props: {
 
       <GameReviewBoard
         moves={props.moves}
-        criticalMoments={props.criticalMoments}
+        criticalMoments={displayCriticalMoments}
         initialPly={props.initialPly}
         selectedPly={selectedPly}
         onSelectPly={setSelectedPly}
@@ -212,7 +258,7 @@ export function GameReviewWorkspace(props: {
         onFocusPlyChange={setSelectedPly}
         opening={props.opening ?? undefined}
         focusLabel={focusLabel}
-        criticalMoments={props.criticalMoments.slice(0, 8).map((moment) => ({
+        criticalMoments={displayCriticalMoments.slice(0, 8).map((moment) => ({
           ply: moment.ply,
           label: moment.label,
           deltaCp: moment.deltaCp

@@ -3,6 +3,16 @@ import { extractPgnHeaders } from "@/lib/services/pgn";
 
 const API_BASE = "https://api.chess.com/pub";
 
+export type ChessComPlayerProfile = {
+  username: string;
+  name?: string;
+  avatar?: string;
+  title?: string;
+  country?: string;
+  followers?: number;
+  url?: string;
+};
+
 function normalizeValue(value?: string): string | undefined {
   if (!value) {
     return undefined;
@@ -43,6 +53,42 @@ export async function validateChessComUsername(username: string): Promise<boolea
   });
 
   return response.ok;
+}
+
+export async function fetchChessComPlayerProfile(username: string): Promise<ChessComPlayerProfile | null> {
+  const response = await fetch(`${API_BASE}/player/${encodeURIComponent(username)}`, {
+    headers: {
+      "User-Agent": "ChessMe/0.1"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
+    }
+    throw new Error(`Chess.com player fetch failed with ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    username?: string;
+    name?: string;
+    avatar?: string;
+    title?: string;
+    country?: string;
+    followers?: number;
+    url?: string;
+  };
+
+  return {
+    username: payload.username?.toLowerCase() || username.toLowerCase(),
+    name: normalizeValue(payload.name),
+    avatar: normalizeValue(payload.avatar),
+    title: normalizeValue(payload.title),
+    country: normalizeValue(payload.country),
+    followers: typeof payload.followers === "number" ? payload.followers : undefined,
+    url: normalizeValue(payload.url)
+  };
 }
 
 export async function fetchChessComArchives(username: string): Promise<string[]> {

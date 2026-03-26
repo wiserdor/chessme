@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
+import { deletePrivateNote, getStoredActiveProfile } from "@/lib/client/private-store";
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import type { NoteRecord } from "@/lib/types";
 
@@ -10,9 +11,11 @@ export function NoteCard(props: {
   note: NoteRecord;
   compact?: boolean;
   refreshOnChange?: boolean;
+  profileUsername?: string;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const resolvedProfileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
 
   return (
     <article className={`rounded-[22px] border border-[color:var(--border)] bg-[color:var(--panel-soft)] ${props.compact ? "p-4" : "p-5"}`}>
@@ -43,6 +46,7 @@ export function NoteCard(props: {
             dialogTitle="Edit note"
             existingNote={props.note}
             refreshOnSave={props.refreshOnChange}
+            profileUsername={resolvedProfileUsername}
           />
           <button
             className="btn-ghost px-3 py-2 text-xs uppercase tracking-[0.12em] text-[color:var(--error-text)]"
@@ -55,13 +59,7 @@ export function NoteCard(props: {
               setNotice(null);
               startTransition(async () => {
                 try {
-                  const response = await fetch(`/api/notes/${props.note.id}`, { method: "DELETE" });
-                  const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-                  if (!response.ok || payload.ok === false) {
-                    setNotice(payload.error || "Could not delete note.");
-                    return;
-                  }
-
+                  await deletePrivateNote(resolvedProfileUsername, props.note.id);
                   window.dispatchEvent(new CustomEvent("notes-updated"));
                   if (props.refreshOnChange) {
                     window.location.reload();

@@ -1,13 +1,9 @@
-import { createProvider } from "@/lib/ai";
 import { MockProvider } from "@/lib/ai/mock-provider";
-import { explainLeakExamples } from "@/lib/services/leak-explanations";
-import { getAISettings } from "@/lib/services/repository";
 import { analyzePositions } from "@/lib/services/engine";
 import { extractPositions } from "@/lib/services/pgn";
 import {
   getExistingGameReviews,
   getGamesToAnalyze,
-  getWeaknessDetail,
   replaceCriticalMomentNotes,
   replaceGameAnalysis,
   replaceWeaknessPatterns,
@@ -67,20 +63,16 @@ function weaknessMetadata(label: string): { key: string; label: string; focus: s
 }
 
 export async function runAnalysis(
-  options?: { gameIds?: string[]; limit?: number; reanalyze?: boolean },
+  options?: { profileUsername?: string; gameIds?: string[]; limit?: number; reanalyze?: boolean },
   hooks?: AnalysisHooks
 ) {
   const fallbackProvider = new MockProvider();
-  const aiSettings = await getAISettings();
-  const reviewProvider = createProvider({
-    provider: aiSettings.provider,
-    model: aiSettings.model,
-    apiKey: aiSettings.apiKey
-  });
+  const reviewProvider = fallbackProvider;
   const games = await getGamesToAnalyze(
     options?.gameIds,
     options?.limit ?? DASHBOARD_ANALYSIS_LIMIT,
-    options?.reanalyze ?? false
+    options?.reanalyze ?? false,
+    options?.profileUsername
   );
   const existingReviews = await getExistingGameReviews(games.map((game) => game.id));
   await hooks?.onPlanned?.(games.length);
@@ -163,7 +155,6 @@ export async function runAnalysis(
     coachModel: string | null;
   }>(reviewInputs.length);
   let skippedExistingReviewCount = 0;
-  let aiBatchFallback = false;
   const batchedIndexes = chunkArray(
     reviewInputs
       .map((_, index) => index)
@@ -194,29 +185,15 @@ export async function runAnalysis(
   for (const indexBatch of batchedIndexes) {
     const inputBatch = indexBatch.map((index) => reviewInputs[index]);
 
-    try {
-      const batchNarratives = await reviewProvider.generateStructuredReviews(inputBatch);
-      for (let offset = 0; offset < indexBatch.length; offset += 1) {
-        narratives[indexBatch[offset] as number] = batchNarratives[offset]?.review;
-        criticalMomentLearnings[indexBatch[offset] as number] = batchNarratives[offset]?.criticalMoments ?? [];
-        narrativeSources[indexBatch[offset] as number] = {
-          coachSource: reviewProvider.name,
-          coachProvider: reviewProvider.name,
-          coachModel: reviewProvider.model
-        };
-      }
-    } catch {
-      aiBatchFallback = true;
-      const batchNarratives = await fallbackProvider.generateStructuredReviews(inputBatch);
-      for (let offset = 0; offset < indexBatch.length; offset += 1) {
-        narratives[indexBatch[offset] as number] = batchNarratives[offset]?.review;
-        criticalMomentLearnings[indexBatch[offset] as number] = batchNarratives[offset]?.criticalMoments ?? [];
-        narrativeSources[indexBatch[offset] as number] = {
-          coachSource: fallbackProvider.name,
-          coachProvider: fallbackProvider.name,
-          coachModel: fallbackProvider.model
-        };
-      }
+    const batchNarratives = await reviewProvider.generateStructuredReviews(inputBatch);
+    for (let offset = 0; offset < indexBatch.length; offset += 1) {
+      narratives[indexBatch[offset] as number] = batchNarratives[offset]?.review;
+      criticalMomentLearnings[indexBatch[offset] as number] = batchNarratives[offset]?.criticalMoments ?? [];
+      narrativeSources[indexBatch[offset] as number] = {
+        coachSource: reviewProvider.name,
+        coachProvider: reviewProvider.name,
+        coachModel: reviewProvider.model
+      };
     }
   }
 
@@ -240,36 +217,15 @@ export async function runAnalysis(
   }
 
   const weaknessPatterns = Array.from(weaknessMap.values());
-  await replaceWeaknessPatterns(weaknessPatterns);
+  await replaceWeaknessPatterns(weaknessPatterns, options?.profileUsername);
   await upsertTrainingCards(generatedCards);
-
-  const topLeakKeys = weaknessPatterns
-    .sort((left, right) => right.count * right.severity - left.count * left.severity)
-    .slice(0, 3)
-    .map((pattern) => pattern.key);
-
-  for (const leakKey of topLeakKeys) {
-    const detail = await getWeaknessDetail(leakKey);
-    if (!detail) {
-      continue;
-    }
-
-    await explainLeakExamples(detail.weakness.label, detail.weakness.key, detail.weakness.examples, {
-      mode: "enrich"
-    });
-  }
-
   return {
     analyzed: games.length,
     cardsGenerated: generatedCards.length,
     weaknesses: weaknessMap.size,
     message:
-      reviewProvider.name === "openai"
-        ? aiBatchFallback
-          ? `Analyzed ${games.length} games. ChatGPT batch review failed for part of the run, some summaries used fallback coaching, and ${skippedExistingReviewCount} already-reviewed games skipped ChatGPT.`
-          : skippedExistingReviewCount > 0
-            ? `Analyzed ${games.length} games with engine review plus batched ChatGPT coaching. Skipped ChatGPT for ${skippedExistingReviewCount} already-reviewed games.`
-            : `Analyzed ${games.length} games with engine review plus batched ChatGPT coaching.`
-        : `Analyzed ${games.length} games with engine review and deterministic fallback coaching. Add OpenAI in Settings to enable batched ChatGPT summaries.`
+      skippedExistingReviewCount > 0
+        ? `Analyzed ${games.length} games with engine review and deterministic coaching. Skipped ${skippedExistingReviewCount} already-reviewed games.`
+        : `Analyzed ${games.length} games with engine review and deterministic coaching.`
   };
 }

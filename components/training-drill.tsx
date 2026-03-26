@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Chessboard } from "react-chessboard";
 import { Chess } from "chess.js";
 
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { NotesPanel } from "@/components/notes-panel";
+import { getStoredActiveProfile, listTrainingProgress, saveTrainingProgress } from "@/lib/client/private-store";
 
 type Card = {
   id: string;
@@ -20,6 +20,8 @@ type Card = {
   difficulty: number;
   sourceGameId: string;
   sourcePly: number;
+  dueAt: number;
+  intervalDays: number;
 };
 
 type AnswerResult = {
@@ -29,30 +31,60 @@ type AnswerResult = {
   hint: string;
 };
 
-export function TrainingDrill(props: { card: Card | null }) {
-  const router = useRouter();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function resolveMoveFromInput(fen: string, rawInput: string) {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const compact = trimmed.replace(/[\s-]/g, "");
+  if (/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(compact)) {
+    const chess = new Chess(fen);
+    try {
+      const move = chess.move({
+        from: compact.slice(0, 2),
+        to: compact.slice(2, 4),
+        promotion: compact.slice(4) || undefined
+      });
+      if (move) {
+        return {
+          uci: `${move.from}${move.to}${move.promotion ?? ""}`.toLowerCase(),
+          san: move.san
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  const chess = new Chess(fen);
+  try {
+    const move = chess.move(trimmed, { strict: false });
+    if (!move) {
+      return null;
+    }
+
+    return {
+      uci: `${move.from}${move.to}${move.promotion ?? ""}`.toLowerCase(),
+      san: move.san
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function TrainingDrill(props: { cards: Card[] }) {
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
   const [boardWidth, setBoardWidth] = useState(0);
   const [move, setMove] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   const [confidence, setConfidence] = useState("3");
   const [result, setResult] = useState<AnswerResult | null>(null);
+  const [lockCardId, setLockCardId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, { intervalDays: number; streak: number; dueAt: number; lastAnsweredAt?: number | null }>>({});
   const [isPending, startTransition] = useTransition();
-  const card = props.card;
-
-  if (!card) {
-      return (
-        <section className="panel">
-          <span className="badge">Queue clear</span>
-          <h1 className="mt-3 font-display text-4xl">No drill is due right now.</h1>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-muted">
-            Import fresh games or rerun analysis to generate new cards. When you answer a card correctly, it gets
-            scheduled into the future automatically.
-          </p>
-      </section>
-    );
-  }
-  const activeCard: Card = card;
 
   useEffect(() => {
     const container = boardContainerRef.current;
@@ -75,35 +107,141 @@ export function TrainingDrill(props: { card: Card | null }) {
     return () => {
       observer.disconnect();
     };
-  }, [activeCard.id]);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProgress() {
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const rows = await listTrainingProgress(profileUsername);
+      if (cancelled) {
+        return;
+      }
+
+      setProgress(
+        Object.fromEntries(
+          rows.map((row) => [
+            row.cardId,
+            {
+              intervalDays: row.intervalDays,
+              streak: row.streak,
+              dueAt: row.dueAt,
+              lastAnsweredAt: row.lastAnsweredAt ?? null
+            }
+          ])
+        )
+      );
+    }
+
+    void loadProgress();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const effectiveCards = useMemo(
+    () =>
+      props.cards.map((card) => {
+        const local = progress[card.id];
+        return {
+          ...card,
+          intervalDays: local?.intervalDays ?? card.intervalDays,
+          streak: local?.streak ?? 0,
+          dueAt: local?.dueAt ?? card.dueAt
+        };
+      }),
+    [progress, props.cards]
+  );
+
+  const nextDueCard = useMemo(() => {
+    const now = Date.now();
+    return effectiveCards
+      .filter((card) => card.dueAt <= now)
+      .sort((left, right) => right.difficulty - left.difficulty || left.dueAt - right.dueAt)[0] ?? null;
+  }, [effectiveCards]);
+
+  const activeCard = useMemo(() => {
+    if (lockCardId) {
+      return effectiveCards.find((card) => card.id === lockCardId) ?? nextDueCard;
+    }
+
+    return nextDueCard;
+  }, [effectiveCards, lockCardId, nextDueCard]);
+
+  const nextCardAfterLock = useMemo(() => {
+    if (!lockCardId) {
+      return null;
+    }
+
+    const now = Date.now();
+    return effectiveCards
+      .filter((card) => card.id !== lockCardId && card.dueAt <= now)
+      .sort((left, right) => right.difficulty - left.difficulty || left.dueAt - right.dueAt)[0] ?? null;
+  }, [effectiveCards, lockCardId]);
+
+  if (!activeCard) {
+    return (
+      <section className="panel">
+        <span className="badge">Queue clear</span>
+        <h1 className="mt-3 font-display text-4xl">No drill is due right now.</h1>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-muted">
+          Import fresh games or rerun analysis to generate new cards. Your drill progress now stays local to this
+          device, so another browser will keep a separate training queue.
+        </p>
+      </section>
+    );
+  }
 
   function submitMove(nextMove: string) {
     setResult(null);
     startTransition(async () => {
-      const response = await fetch("/api/training/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cardId: activeCard.id,
-          move: nextMove,
-          confidence: Number(confidence)
-        })
-      });
-
-      const payload = (await response.json()) as { ok: boolean; error?: string } & AnswerResult;
-      if (!response.ok || payload.ok === false) {
+      const submittedMove = resolveMoveFromInput(activeCard.promptFen, nextMove);
+      if (!submittedMove) {
         setResult({
           correct: false,
           expectedMove: "",
-          explanation: payload.error || "Could not grade answer.",
+          explanation: "Illegal move for this position.",
           hint: activeCard.hint
         });
         return;
       }
 
-      setResult(payload);
+      const expectedMove = resolveMoveFromInput(activeCard.promptFen, activeCard.expectedMove);
+      const normalizedExpected = expectedMove?.uci ?? activeCard.expectedMove.trim().toLowerCase();
+      const correct = normalizedExpected === submittedMove.uci;
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const previous = progress[activeCard.id];
+      const previousInterval = previous?.intervalDays ?? Math.max(1, activeCard.intervalDays);
+      const nextInterval = correct ? Math.max(1, previousInterval * 2) : 1;
+      const streak = correct ? (previous?.streak ?? 0) + 1 : 0;
+      const answeredAt = Date.now();
+      const dueAt = correct ? answeredAt + nextInterval * DAY_MS : answeredAt;
+
+      await saveTrainingProgress(profileUsername, activeCard.id, {
+        intervalDays: nextInterval,
+        streak,
+        dueAt,
+        lastAnsweredAt: answeredAt
+      });
+
+      setProgress((current) => ({
+        ...current,
+        [activeCard.id]: {
+          intervalDays: nextInterval,
+          streak,
+          dueAt,
+          lastAnsweredAt: answeredAt
+        }
+      }));
+      setResult({
+        correct,
+        expectedMove: expectedMove ? `${expectedMove.san} (${expectedMove.uci})` : activeCard.expectedMove,
+        explanation: activeCard.explanation,
+        hint: activeCard.hint
+      });
       setMove("");
-      router.refresh();
+      setLockCardId(activeCard.id);
     });
   }
 
@@ -113,22 +251,20 @@ export function TrainingDrill(props: { card: Card | null }) {
     const targetRank = targetSquare[1];
     const promotion = isPawn && (targetRank === "1" || targetRank === "8") ? "q" : undefined;
 
-    let dropped = null;
     try {
-      dropped = chess.move({
+      const dropped = chess.move({
         from: sourceSquare,
         to: targetSquare,
         promotion
       });
-    } catch {
-      dropped = null;
-    }
+      if (!dropped) {
+        return null;
+      }
 
-    if (!dropped) {
+      return `${dropped.from}${dropped.to}${dropped.promotion ?? ""}`.toLowerCase();
+    } catch {
       return null;
     }
-
-    return `${dropped.from}${dropped.to}${dropped.promotion ?? ""}`.toLowerCase();
   }
 
   return (
@@ -151,6 +287,7 @@ export function TrainingDrill(props: { card: Card | null }) {
           buttonLabel="Add note on this drill"
           buttonClassName="btn-secondary w-full text-sm sm:w-auto"
           dialogTitle="Save note on this training position"
+          profileUsername={getStoredActiveProfile() ?? "default"}
           context={{
             anchorType: "training-card",
             anchorLabel: activeCard.title,
@@ -276,6 +413,16 @@ export function TrainingDrill(props: { card: Card | null }) {
               <p className="font-semibold">{result.correct ? "Correct." : "Not quite."}</p>
               <p className="mt-2 text-sm">Expected move: {result.expectedMove || "Unavailable"}</p>
               <p className="mt-2 text-sm leading-6">{result.explanation}</p>
+              <button
+                className="btn-secondary mt-4 w-full text-sm sm:w-auto"
+                onClick={() => {
+                  setResult(null);
+                  setLockCardId(null);
+                }}
+                type="button"
+              >
+                {result.correct ? (nextCardAfterLock ? "Next drill" : "Done for now") : "Try again"}
+              </button>
             </div>
           ) : null}
         </div>

@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { NoteComposerTrigger } from "@/components/note-composer-trigger";
 import { UnlockAICoachCard } from "@/components/unlock-ai-coach-card";
+import {
+  appendCoachExchange,
+  getCoachMessages,
+  getPrivateAIConfig,
+  getStoredActiveProfile,
+  searchPrivateNotes
+} from "@/lib/client/private-store";
 
 type Message = {
   role: "user" | "coach";
@@ -27,7 +34,51 @@ export function CoachLabChat(props: {
   const [focusArea, setFocusArea] = useState(props.focusOptions[0]?.value ?? "");
   const [messages, setMessages] = useState<Message[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hasLocalApiKey, setHasLocalApiKey] = useState(props.hasApiKey);
+  const [settings, setSettings] = useState<{ provider: "openai" | "mock"; model: string; apiKey?: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocalState() {
+      const profileUsername = getStoredActiveProfile() ?? "default";
+      const [config, storedMessages] = await Promise.all([
+        getPrivateAIConfig(),
+        getCoachMessages(profileUsername, "coach-lab")
+      ]);
+      if (cancelled) {
+        return;
+      }
+
+      const localHasApiKey = config.provider === "openai" && Boolean(config.apiKey);
+      setHasLocalApiKey(localHasApiKey);
+      setSettings(
+        localHasApiKey
+          ? {
+              provider: "openai",
+              model: config.model,
+              apiKey: config.apiKey ?? undefined
+            }
+          : null
+      );
+
+      if (storedMessages.length) {
+        setMessages(
+          storedMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+            focusArea: message.focusArea ?? null
+          }))
+        );
+      }
+    }
+
+    void loadLocalState();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.hasApiKey]);
 
   function submit(nextQuestion: string) {
     setNotice(null);
@@ -35,6 +86,11 @@ export function CoachLabChat(props: {
       const trimmed = nextQuestion.trim();
       if (!trimmed) {
         setNotice("Type a question for the coach.");
+        return;
+      }
+
+      if (!settings?.apiKey) {
+        setNotice("Add your OpenAI token in Settings before using coach chat.");
         return;
       }
 
@@ -47,6 +103,13 @@ export function CoachLabChat(props: {
       setQuestion("");
 
       try {
+        const profileUsername = getStoredActiveProfile() ?? "default";
+        const relevantNotes = await searchPrivateNotes(profileUsername, {
+          anchorType: "coach-flow",
+          ...(focusArea ? { focusArea } : {}),
+          limit: 5
+        });
+
         const response = await fetch("/api/coach-lab/coach-chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -57,7 +120,14 @@ export function CoachLabChat(props: {
               role: message.role,
               content: message.content,
               focusArea: message.focusArea ?? null
-            }))
+            })),
+            notes: relevantNotes.slice(0, 5).map((note) => ({
+              title: note.title,
+              excerpt: note.excerpt,
+              anchorLabel: note.anchorLabel,
+              tags: [...note.manualTags, ...note.derivedTags].slice(0, 6)
+            })),
+            settings
           })
         });
 
@@ -73,7 +143,19 @@ export function CoachLabChat(props: {
           return;
         }
 
-        setMessages((current) => [...current, { role: "coach", content: payload.answer as string, focusArea: focusArea || null }]);
+        await appendCoachExchange(profileUsername, "coach-lab", {
+          question: trimmed,
+          answer: payload.answer,
+          focusArea: focusArea || null
+        });
+        const nextMessages = await getCoachMessages(profileUsername, "coach-lab");
+        setMessages(
+          nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+            focusArea: message.focusArea ?? null
+          }))
+        );
       } catch {
         setMessages((current) => current.slice(0, -1));
         setNotice("Could not reach the coach. Please try again.");
@@ -115,7 +197,7 @@ export function CoachLabChat(props: {
           <button
             key={item}
             className="btn-secondary justify-start px-3 py-2 text-left text-xs uppercase tracking-[0.12em]"
-            disabled={isPending || !props.hasApiKey}
+            disabled={isPending || !hasLocalApiKey}
             onClick={() => submit(item)}
             type="button"
           >
@@ -124,7 +206,7 @@ export function CoachLabChat(props: {
         ))}
       </div>
 
-      {!props.hasApiKey ? (
+      {!hasLocalApiKey ? (
         <div className="mt-4">
           <UnlockAICoachCard
             compact
@@ -170,6 +252,7 @@ export function CoachLabChat(props: {
                           buttonClassName="btn-ghost px-3 py-2 text-[11px] uppercase tracking-[0.12em]"
                           dialogTitle="Save coach note"
                           initialBody={message.content}
+                          profileUsername={getStoredActiveProfile() ?? "default"}
                           context={{
                             anchorType: "coach-flow",
                             anchorLabel: message.focusArea || "Coach lab",
@@ -211,16 +294,16 @@ export function CoachLabChat(props: {
             id="coach-lab-question"
             className="field-area min-h-28 rounded-[20px]"
             placeholder={
-              props.hasApiKey
+              hasLocalApiKey
                 ? "Ask the coach about this page..."
                 : "Unlock AI coach in Settings to ask about blindspots, trends, and what to train next..."
             }
-            disabled={!props.hasApiKey}
+            disabled={!hasLocalApiKey}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
           {notice ? <p className="text-xs text-[color:var(--error-text)]">{notice}</p> : null}
-          {props.hasApiKey ? (
+          {hasLocalApiKey ? (
             <button className="btn-primary w-full text-sm" disabled={isPending} type="submit">
               {isPending ? "Thinking..." : "Ask coach"}
             </button>

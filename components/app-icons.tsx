@@ -106,6 +106,20 @@ export function NotesIcon(props: IconProps) {
   );
 }
 
+export function ProfileIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="8" r="3.25" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M5.5 19a6.5 6.5 0 0 1 13 0"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </BaseIcon>
+  );
+}
+
 export function LeakIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

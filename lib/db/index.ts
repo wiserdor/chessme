@@ -88,6 +88,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS game_imports (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     source TEXT NOT NULL,
     source_id TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -96,6 +97,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS analysis_jobs (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     status TEXT NOT NULL,
     options_json TEXT NOT NULL DEFAULT '{}',
     total_games INTEGER NOT NULL DEFAULT 0,
@@ -107,6 +109,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS games (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     external_id TEXT NOT NULL UNIQUE,
     source TEXT NOT NULL,
     source_url TEXT,
@@ -125,6 +128,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS positions (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     game_id TEXT NOT NULL,
     ply INTEGER NOT NULL,
     san TEXT NOT NULL,
@@ -135,6 +139,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS engine_reviews (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     game_id TEXT NOT NULL,
     ply INTEGER NOT NULL,
     fen TEXT NOT NULL,
@@ -149,6 +154,7 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS game_reviews (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     game_id TEXT NOT NULL UNIQUE,
     summary TEXT NOT NULL,
     coaching_notes_json TEXT NOT NULL DEFAULT '[]',
@@ -172,7 +178,8 @@ sqlite.exec(`
   );
   CREATE TABLE IF NOT EXISTS weakness_patterns (
     id TEXT PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
+    profile_username TEXT NOT NULL DEFAULT 'default',
+    key TEXT NOT NULL,
     label TEXT NOT NULL,
     severity INTEGER NOT NULL,
     count INTEGER NOT NULL,
@@ -181,8 +188,11 @@ sqlite.exec(`
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE UNIQUE INDEX IF NOT EXISTS weakness_patterns_profile_key_unique
+  ON weakness_patterns(profile_username, key);
   CREATE TABLE IF NOT EXISTS training_cards (
     id TEXT PRIMARY KEY,
+    profile_username TEXT NOT NULL DEFAULT 'default',
     title TEXT NOT NULL,
     theme TEXT NOT NULL,
     prompt_fen TEXT NOT NULL,
@@ -243,6 +253,131 @@ try {
 } catch {}
 
 try {
+  sqlite.exec("ALTER TABLE game_imports ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE analysis_jobs ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE games ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE positions ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE engine_reviews ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE game_reviews ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE weakness_patterns ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
+  const weaknessSchemaRow = sqlite
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'weakness_patterns'")
+    .get() as { sql?: string } | undefined;
+
+  if (weaknessSchemaRow?.sql?.includes("key TEXT NOT NULL UNIQUE")) {
+    sqlite.exec(`
+      ALTER TABLE weakness_patterns RENAME TO weakness_patterns_legacy;
+      CREATE TABLE weakness_patterns (
+        id TEXT PRIMARY KEY,
+        profile_username TEXT NOT NULL DEFAULT 'default',
+        key TEXT NOT NULL,
+        label TEXT NOT NULL,
+        severity INTEGER NOT NULL,
+        count INTEGER NOT NULL,
+        examples_json TEXT NOT NULL DEFAULT '[]',
+        suggested_focus TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX weakness_patterns_profile_key_unique
+      ON weakness_patterns(profile_username, key);
+      INSERT INTO weakness_patterns (
+        id,
+        profile_username,
+        key,
+        label,
+        severity,
+        count,
+        examples_json,
+        suggested_focus,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        COALESCE(NULLIF(profile_username, ''), 'default'),
+        key,
+        label,
+        severity,
+        count,
+        examples_json,
+        suggested_focus,
+        created_at,
+        updated_at
+      FROM weakness_patterns_legacy;
+    `);
+  }
+} catch {}
+
+try {
+  sqlite.exec(`
+    INSERT OR IGNORE INTO weakness_patterns (
+      id,
+      profile_username,
+      key,
+      label,
+      severity,
+      count,
+      examples_json,
+      suggested_focus,
+      created_at,
+      updated_at
+    )
+    SELECT
+      id,
+      COALESCE(NULLIF(profile_username, ''), 'default'),
+      key,
+      label,
+      severity,
+      count,
+      examples_json,
+      suggested_focus,
+      created_at,
+      updated_at
+    FROM weakness_patterns_legacy;
+  `);
+} catch {}
+
+try {
+  sqlite.exec("DROP INDEX IF EXISTS weakness_patterns_profile_key_unique");
+} catch {}
+
+try {
+  sqlite.exec("DROP TABLE IF EXISTS weakness_patterns_legacy");
+} catch {}
+
+try {
+  sqlite.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS weakness_patterns_profile_key_unique ON weakness_patterns(profile_username, key)"
+  );
+} catch {}
+
+try {
+  sqlite.exec("ALTER TABLE training_cards ADD COLUMN profile_username TEXT NOT NULL DEFAULT 'default'");
+} catch {}
+
+try {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS ai_reports (id TEXT PRIMARY KEY, report_type TEXT NOT NULL UNIQUE, title TEXT NOT NULL, games_count INTEGER NOT NULL, payload_json TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, updated_at INTEGER NOT NULL)"
   );
@@ -273,6 +408,25 @@ try {
 try {
   sqlite.exec("ALTER TABLE notes ADD COLUMN coach_message_context TEXT");
 } catch {}
+
+sqlite.exec(`
+  UPDATE game_imports
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE analysis_jobs
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE games
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE positions
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE engine_reviews
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE game_reviews
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE weakness_patterns
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+  UPDATE training_cards
+  SET profile_username = COALESCE(NULLIF(profile_username, 'default'), (SELECT username FROM profiles ORDER BY updated_at DESC LIMIT 1), 'default');
+`);
 
 export const db = drizzle(sqlite, { schema });
 export { sqlite };

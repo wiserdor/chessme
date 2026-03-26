@@ -1,19 +1,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { FavoriteIcon } from "@/components/app-icons";
+import { getStoredActiveProfile, isFavoriteGame, setFavoriteGame } from "@/lib/client/private-store";
 
 export function FavoriteGameButton(props: {
   gameId: string;
   initialFavorite: boolean;
   compact?: boolean;
+  profileUsername?: string;
 }) {
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(props.initialFavorite);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
+
+  useEffect(() => {
+    let cancelled = false;
+    void isFavoriteGame(profileUsername, props.gameId).then((favorite) => {
+      if (!cancelled) {
+        setIsFavorite(favorite);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileUsername, props.gameId]);
 
   return (
     <div className="space-y-1">
@@ -32,25 +47,8 @@ export function FavoriteGameButton(props: {
 
           startTransition(async () => {
             try {
-              const response = await fetch(`/api/games/${props.gameId}/favorite`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ favorite: nextFavorite })
-              });
-
-              const payload = (await response.json().catch(() => ({}))) as {
-                ok?: boolean;
-                error?: string;
-                favorite?: boolean;
-              };
-
-              if (!response.ok || payload.ok === false) {
-                setIsFavorite(previous);
-                setNotice(payload.error || "Could not save favorite.");
-                return;
-              }
-
-              setIsFavorite(Boolean(payload.favorite));
+              await setFavoriteGame(profileUsername, props.gameId, nextFavorite);
+              window.dispatchEvent(new CustomEvent("favorites-updated"));
               router.refresh();
             } catch {
               setIsFavorite(previous);

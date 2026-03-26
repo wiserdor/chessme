@@ -164,3 +164,72 @@ export interface NoteRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface PrivateAIConfig {
+  provider: ProviderName;
+  model: string;
+  apiKey: string | null;
+  updatedAt: number;
+}
+
+export interface SavedProfileShortcut {
+  username: string;
+  savedAt: number;
+  lastOpenedAt: number;
+}
+
+export interface PrivateCoachMessage {
+  id: string;
+  profileKey: string;
+  gameId: string;
+  role: "user" | "coach";
+  content: string;
+  focusPly?: number | null;
+  focusArea?: string | null;
+  createdAt: number;
+}
+
+export interface PrivateGameAIReview {
+  gameId: string;
+  profileKey: string;
+  review: ReviewNarrative;
+  criticalMoments: CriticalMomentLearning[];
+  provider: string;
+  model: string;
+  updatedAt: number;
+}
+
+export interface PrivateLeakExplanationCache {
+  leakKey: string;
+  profileKey: string;
+  examples: Array<{
+    gameId: string;
+    ply?: number | null;
+    explanation: string;
+    whyLeak: string;
+    source: "ai" | "engine";
+  }>;
+  provider: string;
+  model: string;
+  updatedAt: number;
+}
+
+export interface PrivateAIReportCache {
+  reportType: string;
+  profileKey: string;
+  title: string;
+  gamesCount: number;
+  payload: PortfolioReview;
+  provider: string;
+  model: string;
+  updatedAt: number;
+}
+
+export interface PrivateTrainingProgress {
+  cardId: string;
+  profileKey: string;
+  intervalDays: number;
+  streak: number;
+  dueAt: number;
+  lastAnsweredAt?: number | null;
+}

@@ -374,6 +374,128 @@ button {
   font-weight: 800;
 }
 
+.profile-switcher-trigger,
+.profile-switcher-mobile-trigger {
+  @apply inline-flex items-center gap-3 rounded-full px-3 py-2 text-sm font-semibold;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 94%, transparent 6%);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-switcher-trigger-active {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border) 66%);
+}
+
+.profile-switcher-icon {
+  @apply inline-flex h-9 w-9 items-center justify-center rounded-full;
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-strong) 88%);
+  color: var(--primary);
+}
+
+.profile-switcher-avatar,
+.profile-switcher-mobile-avatar {
+  @apply h-9 w-9 rounded-full object-cover;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-switcher-avatar-fallback {
+  @apply text-xs font-bold uppercase;
+}
+
+.profile-switcher-copy {
+  @apply flex flex-col items-start leading-tight;
+}
+
+.profile-switcher-label {
+  @apply text-[11px] uppercase tracking-[0.14em];
+  color: var(--muted);
+}
+
+.profile-switcher-name {
+  @apply max-w-[11rem] truncate text-sm;
+  color: var(--text);
+}
+
+.profile-switcher-panel {
+  @apply absolute right-0 top-[calc(100%+0.75rem)] z-40 w-[22rem] rounded-[24px] p-4;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 94%, transparent 6%);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(16px);
+}
+
+.profile-switcher-summary {
+  @apply flex items-start gap-4 rounded-[20px] p-4;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 96%, transparent 4%);
+}
+
+.profile-switcher-summary-avatar {
+  @apply h-14 w-14 rounded-full object-cover;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-switcher-summary-avatar-fallback {
+  @apply inline-flex items-center justify-center text-sm font-bold uppercase;
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-strong) 88%);
+  color: var(--primary);
+}
+
+.profile-switcher-stat-grid {
+  @apply mt-4 grid grid-cols-3 gap-3;
+}
+
+.profile-switcher-stat {
+  @apply rounded-[18px] px-3 py-3 text-center;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+}
+
+.profile-switcher-stat-label {
+  @apply block text-[11px] font-semibold uppercase tracking-[0.14em];
+  color: var(--muted);
+}
+
+.profile-switcher-stat-value {
+  @apply mt-1 block text-lg font-semibold;
+  color: var(--text);
+}
+
+.profile-switcher-item {
+  @apply flex w-full items-center justify-between rounded-[18px] px-4 py-3 text-left text-sm font-semibold transition;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.profile-switcher-item:hover {
+  transform: translateY(-1px);
+}
+
+.profile-switcher-mobile-trigger {
+  @apply w-full justify-center sm:hidden;
+}
+
+.profile-switcher-mobile-sheet {
+  @apply fixed inset-0 z-50 sm:hidden;
+}
+
+.profile-switcher-mobile-backdrop {
+  @apply absolute inset-0;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(4px);
+}
+
+.profile-switcher-mobile-panel {
+  @apply absolute inset-x-3 bottom-3 rounded-[28px] p-4;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
 h1,
 h2,
 h3,
@@ -391,7 +513,7 @@ button {
 }
 
 .site-header {
-  @apply relative overflow-hidden rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-6 sm:py-5;
+  @apply relative overflow-visible rounded-[24px] px-4 py-4 sm:rounded-[32px] sm:px-6 sm:py-5;
   border: 1px solid var(--border);
   background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 96%, transparent 4%) 0%, color-mix(in srgb, var(--panel) 92%, var(--primary) 8%) 100%);
   box-shadow: var(--shadow-lg);
