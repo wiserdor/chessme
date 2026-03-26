@@ -78,28 +78,32 @@ async function createStockfishEngine(): Promise<StockfishMessageTarget | null> {
       return null;
     }
 
-    const entry = fs
-      .readdirSync(stockfishDir)
-      .filter((file) => file.endsWith(".js") && file.includes("stockfish-17.1-lite-single"))
-      .sort()[0];
+    const candidates = [
+      () => nodeRequire("stockfish/src/stockfish-17.1-lite-single-03e3232.js"),
+      () => nodeRequire("stockfish/src/stockfish-17.1-lite-51f59da.js"),
+      () => nodeRequire("stockfish/src/stockfish-17.1-single-a496a04.js"),
+      () => nodeRequire("stockfish/src/stockfish-17.1-8e4d048.js")
+    ];
 
-    if (!entry) {
-      return null;
+    for (const loadCandidate of candidates) {
+      try {
+        const imported: any = loadCandidate();
+        const factory =
+          typeof imported.default === "function"
+            ? imported.default
+            : typeof imported === "function"
+              ? imported
+              : null;
+
+        if (factory) {
+          return factory() as StockfishMessageTarget;
+        }
+      } catch {
+        continue;
+      }
     }
 
-    const imported: any = nodeRequire(path.join(stockfishDir, entry));
-    const factory =
-      typeof imported.default === "function"
-        ? imported.default
-        : typeof imported === "function"
-          ? imported
-          : null;
-
-    if (!factory) {
-      return null;
-    }
-
-    return factory() as StockfishMessageTarget;
+    return null;
   } catch {
     return null;
   }
