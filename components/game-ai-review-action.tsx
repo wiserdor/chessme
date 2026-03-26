@@ -88,6 +88,11 @@ export function GameAIReviewAction(props: {
 
   return (
     <div className="space-y-2">
+      {hasCompletedReview ? (
+        <p className="inline-flex items-center rounded-full bg-sky-500/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
+          ChatGPT review saved on this device
+        </p>
+      ) : null}
       {hasLocalApiKey ? (
         <button
           className="btn-primary px-4 py-2 text-xs uppercase tracking-[0.12em]"

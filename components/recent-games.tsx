@@ -3,31 +3,42 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { FavoriteIcon, GameFeedIcon, GamesIcon } from "@/components/app-icons";
+import { CoachIcon, FavoriteIcon, GameFeedIcon, GamesIcon } from "@/components/app-icons";
 import { ResultPill } from "@/components/result-pill";
-import { getStoredActiveProfile, listFavoriteGameIds } from "@/lib/client/private-store";
+import { getPrivateGameAIReview, getStoredActiveProfile, listFavoriteGameIds } from "@/lib/client/private-store";
 import { DashboardSnapshot } from "@/lib/types";
 
 export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
   const activeProfile = getStoredActiveProfile() ?? props.snapshot.profile?.username ?? "default";
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [aiReviewedIds, setAiReviewedIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const ids = await listFavoriteGameIds(activeProfile);
+      const [ids, aiReviews] = await Promise.all([
+        listFavoriteGameIds(activeProfile),
+        Promise.all(
+          props.snapshot.recentGames.map(async (game) =>
+            (await getPrivateGameAIReview(activeProfile, game.id)) ? game.id : null
+          )
+        )
+      ]);
       if (!cancelled) {
         setFavoriteIds(ids);
+        setAiReviewedIds(aiReviews.filter((value): value is string => Boolean(value)));
       }
     }
     void load();
     const onUpdate = () => void load();
     window.addEventListener("favorites-updated", onUpdate);
+    window.addEventListener("private-game-review-updated", onUpdate);
     return () => {
       cancelled = true;
       window.removeEventListener("favorites-updated", onUpdate);
+      window.removeEventListener("private-game-review-updated", onUpdate);
     };
-  }, [activeProfile]);
+  }, [activeProfile, props.snapshot.recentGames]);
 
   const favoriteGames = useMemo(
     () => props.snapshot.recentGames.filter((game) => favoriteIds.includes(game.id)),
@@ -56,6 +67,12 @@ export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" />
                   <p className="font-semibold">{game.opening}</p>
+                  {aiReviewedIds.includes(game.id) ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                      <CoachIcon className="h-3.5 w-3.5" />
+                      AI analyzed
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
                   <span>{formatPlayedAt(game.playedAt)}</span>
@@ -79,23 +96,34 @@ export function FavoriteGames(props: { snapshot: DashboardSnapshot }) {
 export function RecentGames(props: { snapshot: DashboardSnapshot }) {
   const activeProfile = getStoredActiveProfile() ?? props.snapshot.profile?.username ?? "default";
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [aiReviewedIds, setAiReviewedIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const ids = await listFavoriteGameIds(activeProfile);
+      const [ids, aiReviews] = await Promise.all([
+        listFavoriteGameIds(activeProfile),
+        Promise.all(
+          props.snapshot.recentGames.map(async (game) =>
+            (await getPrivateGameAIReview(activeProfile, game.id)) ? game.id : null
+          )
+        )
+      ]);
       if (!cancelled) {
         setFavoriteIds(ids);
+        setAiReviewedIds(aiReviews.filter((value): value is string => Boolean(value)));
       }
     }
     void load();
     const onUpdate = () => void load();
     window.addEventListener("favorites-updated", onUpdate);
+    window.addEventListener("private-game-review-updated", onUpdate);
     return () => {
       cancelled = true;
       window.removeEventListener("favorites-updated", onUpdate);
+      window.removeEventListener("private-game-review-updated", onUpdate);
     };
-  }, [activeProfile]);
+  }, [activeProfile, props.snapshot.recentGames]);
 
   return (
     <section className="panel">
@@ -120,6 +148,12 @@ export function RecentGames(props: { snapshot: DashboardSnapshot }) {
                   <GamesIcon className="h-4 w-4 text-muted" />
                   <p className="font-semibold">{game.opening}</p>
                   {favoriteIds.includes(game.id) ? <FavoriteIcon className="h-4 w-4 fill-current text-amber-600" /> : null}
+                  {aiReviewedIds.includes(game.id) ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                      <CoachIcon className="h-3.5 w-3.5" />
+                      AI analyzed
+                    </span>
+                  ) : null}
                   <span className="rounded-full bg-slate-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                     {game.status}
                   </span>
