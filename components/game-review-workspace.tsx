@@ -22,6 +22,9 @@ type CriticalMomentRow = {
   ply: number;
   label: string;
   deltaCp: number;
+  bestMove?: string;
+  playedMove?: string;
+  tags?: string[];
   whatHappened?: string;
   whyItMatters?: string;
   whatToThink?: string;
@@ -59,6 +62,52 @@ function labelForMoveOwner(moveBy: string, playerColor?: "white" | "black") {
 
 function formatCriticalLabel(label: string) {
   return label.replace(/-/g, " ");
+}
+
+function buildDeterministicLesson(input: {
+  move?: MoveRow | null;
+  criticalMoment?: CriticalMomentRow | null;
+  playerColor?: "white" | "black";
+}) {
+  const { move, criticalMoment } = input;
+  if (!move) {
+    return null;
+  }
+
+  const moveOwner = normalizeMoveBy(move.moveBy);
+  const isPlayerMove = input.playerColor ? moveOwner === input.playerColor : true;
+  const ownerLabel = isPlayerMove ? "you" : "your opponent";
+  const tags = criticalMoment?.tags?.length ? criticalMoment.tags : move.tags;
+  const bestMove = criticalMoment?.bestMove;
+  const summaryByLabel: Record<string, string> = {
+    "opening-leak": `This move was flagged as an opening leak, which usually means ${ownerLabel} drifted from development, king safety, or central control too early.`,
+    "endgame-error": `This move was flagged as an endgame error, so technique in a simpler position likely mattered more than immediate activity.`,
+    "missed-tactic": `This move missed a tactical resource. The main lesson is to scan forcing moves before trusting the natural continuation.`,
+    blunder: `This move created a large swing immediately. It usually means something concrete became loose, hanging, or tactically vulnerable.`,
+    mistake: `This move gave up a meaningful amount of evaluation. There was likely a stronger continuation or a cleaner way to keep control.`,
+    inaccuracy: `This move was not losing on the spot, but it still drifted from the strongest continuation in the position.`
+  };
+
+  const checklist = [
+    tags.includes("opening")
+      ? "Before committing in the opening, check development, king safety, and who controls the center."
+      : tags.includes("endgame")
+        ? "In simpler positions, improve king and piece activity before rushing pawn moves."
+        : "Pause before the move and compare at least two candidate moves.",
+    tags.includes("capture") || tags.includes("check")
+      ? "Always scan checks, captures, and threats for both sides before locking in the move."
+      : "Ask what your opponent wants after this move, not just what you want.",
+    bestMove ? `Compare your move with the engine move ${bestMove} and ask what idea that move keeps alive.` : "After the move, ask what changed in piece safety, king safety, and coordination."
+  ];
+
+  return {
+    title: criticalMoment ? `Engine lesson: ${formatCriticalLabel(criticalMoment.label)}` : "Engine lesson",
+    summary:
+      summaryByLabel[criticalMoment?.label || ""] ||
+      `This move did not carry saved AI notes, but the replay still gives you a useful checkpoint: compare what ${ownerLabel} played with the position’s safer or more active alternatives.`,
+    bestMove,
+    checklist
+  };
 }
 
 export function GameReviewWorkspace(props: {
@@ -136,6 +185,15 @@ export function GameReviewWorkspace(props: {
   const selectedCriticalMoment = useMemo(
     () => displayCriticalMoments.find((moment) => moment.ply === selectedMove?.ply) ?? null,
     [displayCriticalMoments, selectedMove]
+  );
+  const deterministicLesson = useMemo(
+    () =>
+      buildDeterministicLesson({
+        move: selectedMove,
+        criticalMoment: selectedCriticalMoment,
+        playerColor: props.playerColor
+      }),
+    [props.playerColor, selectedCriticalMoment, selectedMove]
   );
 
   return (
@@ -218,6 +276,25 @@ export function GameReviewWorkspace(props: {
                   Ask the coach what this move reveals about your thinking or what you should check next time.
                 </p>
               )}
+
+              {deterministicLesson && !selectedCriticalMoment?.aiAvailable ? (
+                <div className="mt-4 rounded-[18px] border border-[color:var(--border)] bg-[color:var(--panel-soft)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">{deterministicLesson.title}</p>
+                  <p className="mt-3 text-sm leading-6 text-muted-strong">{deterministicLesson.summary}</p>
+                  {deterministicLesson.bestMove ? (
+                    <p className="mt-3 text-sm text-muted-strong">
+                      <span className="font-semibold text-[color:var(--text)]">Best move:</span> {deterministicLesson.bestMove}
+                    </p>
+                  ) : null}
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-strong">
+                    {deterministicLesson.checklist.map((item) => (
+                      <li key={item} className="rounded-[14px] bg-[color:var(--panel-strong)] px-3 py-2">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 {selectedMove ? (

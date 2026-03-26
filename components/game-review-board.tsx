@@ -19,6 +19,9 @@ type CriticalMomentRow = {
   ply: number;
   label: string;
   deltaCp: number;
+  bestMove?: string;
+  playedMove?: string;
+  tags?: string[];
   whatHappened?: string;
   whyItMatters?: string;
   whatToThink?: string;
@@ -66,6 +69,29 @@ function getMoveSquares(fenBefore: string, san: string) {
   } catch {
     return null;
   }
+}
+
+function buildEngineFallback(moment: CriticalMomentRow) {
+  const checklist = [
+    moment.tags?.includes("opening")
+      ? "Re-check development, king safety, and center control before committing in the opening."
+      : moment.tags?.includes("endgame")
+        ? "In simpler positions, improve king and piece activity before rushing pawn moves."
+        : "Compare your move with at least one safer or more forcing candidate.",
+    moment.tags?.includes("capture") || moment.tags?.includes("check")
+      ? "Scan checks, captures, and threats for both sides before trusting the natural move."
+      : "Ask what became loose or tactically vulnerable after this move.",
+    moment.bestMove
+      ? `Review why the engine preferred ${moment.bestMove} over ${moment.playedMove || "the played move"}.`
+      : "Look for the cleaner continuation that keeps coordination and safety."
+  ];
+
+  return {
+    summary:
+      moment.whyItMatters ||
+      `This move caused a ${moment.deltaCp}cp swing. Even without AI notes, the engine is telling you this was a critical decision point worth revisiting.`,
+    checklist
+  };
 }
 
 export function GameReviewBoard(props: {
@@ -388,7 +414,24 @@ export function GameReviewBoard(props: {
                   </p>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-3 rounded-[16px] border border-[color:var(--border)] bg-[color:var(--panel-strong)] p-3 text-muted-strong">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Engine review</p>
+                <p className="mt-2 leading-6">{buildEngineFallback(selectedCriticalMoment).summary}</p>
+                {selectedCriticalMoment.bestMove ? (
+                  <p className="mt-2 leading-6">
+                    <span className="font-semibold">Best move:</span> {selectedCriticalMoment.bestMove}
+                  </p>
+                ) : null}
+                <div className="mt-3 space-y-2">
+                  {buildEngineFallback(selectedCriticalMoment).checklist.map((item) => (
+                    <p key={item} className="rounded-[14px] bg-[color:var(--panel-soft)] px-3 py-2 leading-6">
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
       </div>
