@@ -18,6 +18,7 @@ import { buildDerivedTags, buildNoteExcerpt, buildNoteHref, buildNoteTitle, dedu
 const DB_NAME = "chessme-private";
 const DB_VERSION = 1;
 const ACTIVE_PROFILE_KEY = "chessme-active-profile";
+const PROFILE_STATE_EVENT = "private-profile-state-updated";
 
 type StoredNote = Omit<NoteRecord, "href" | "excerpt"> & {
   profileKey: string;
@@ -115,6 +116,12 @@ function nowTs() {
   return Date.now();
 }
 
+function dispatchProfileStateUpdated() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(PROFILE_STATE_EVENT));
+  }
+}
+
 function createId(prefix: string) {
   return `${prefix}_${window.crypto.randomUUID()}`;
 }
@@ -166,6 +173,17 @@ export function setStoredActiveProfile(username: string) {
   const normalized = profileKey(username);
   window.localStorage.setItem(ACTIVE_PROFILE_KEY, normalized);
   window.document.cookie = `${ACTIVE_PROFILE_KEY}=${encodeURIComponent(normalized)}; path=/; max-age=31536000; samesite=lax`;
+  dispatchProfileStateUpdated();
+}
+
+export function clearStoredActiveProfile() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(ACTIVE_PROFILE_KEY);
+  window.document.cookie = `${ACTIVE_PROFILE_KEY}=; path=/; max-age=0; samesite=lax`;
+  dispatchProfileStateUpdated();
 }
 
 export async function getPrivateAIConfig(): Promise<PrivateAIConfig> {
@@ -214,10 +232,12 @@ export async function saveProfileShortcut(username: string) {
     savedAt: current?.savedAt ?? nowTs(),
     lastOpenedAt: nowTs()
   } satisfies SavedProfileShortcut);
+  dispatchProfileStateUpdated();
 }
 
 export async function removeProfileShortcut(username: string) {
   await deleteFromStore("savedProfiles", profileKey(username));
+  dispatchProfileStateUpdated();
 }
 
 export async function touchProfileShortcut(username: string) {
@@ -230,6 +250,36 @@ export async function touchProfileShortcut(username: string) {
     ...current,
     lastOpenedAt: nowTs()
   });
+  dispatchProfileStateUpdated();
+}
+
+export async function clearPrivateAppData(options?: { includeSettings?: boolean }) {
+  const db = await openDb();
+  const storeNames = Array.from(db.objectStoreNames);
+  const storesToClear = storeNames.filter((name) => {
+    if (options?.includeSettings) {
+      return true;
+    }
+
+    return name !== "aiConfig" && name !== "savedProfiles";
+  });
+
+  if (storesToClear.length) {
+    const transaction = db.transaction(storesToClear, "readwrite");
+    for (const storeName of storesToClear) {
+      transaction.objectStore(storeName).clear();
+    }
+    await transactionDone(transaction);
+  }
+
+  if (options?.includeSettings) {
+    clearStoredActiveProfile();
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("private-ai-config-updated"));
+  }
+  dispatchProfileStateUpdated();
 }
 
 export async function isFavoriteGame(username: string, gameId: string) {

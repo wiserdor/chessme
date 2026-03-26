@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { AICoachStatus } from "@/components/ai-coach-status";
-import { clearPrivateAIConfig, getPrivateAIConfig, savePrivateAIConfig } from "@/lib/client/private-store";
+import { clearPrivateAppData, getPrivateAIConfig, savePrivateAIConfig } from "@/lib/client/private-store";
 
 type ProviderConfig = {
   name: string;
@@ -246,13 +246,14 @@ export function AISettingsForm(props: Props) {
 
       <section className="danger-card">
         <p className="text-xs font-semibold uppercase tracking-[0.14em]">Danger Zone</p>
-        <h3 className="mt-2 font-display text-2xl">Clear data</h3>
+        <h3 className="mt-2 font-display text-2xl">Clear local data</h3>
         <p className="mt-2 text-sm">
-          Removes imported games, analysis, leaks, training cards, sessions, and cached AI leak explanations.
+          Clears private data saved on this device, such as notes, favorites, coach history, cached AI explanations,
+          and local training progress. Public profile games and server analysis stay untouched.
         </p>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input checked={clearAllData} type="checkbox" onChange={(event) => setClearAllData(event.target.checked)} />
-          Also clear profile + AI settings (full reset)
+          Also clear saved profiles, active profile, and AI settings on this device
         </label>
         <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.12em]" htmlFor="clear-confirm">
           Type DELETE to confirm
@@ -274,21 +275,9 @@ export function AISettingsForm(props: Props) {
 
             setNotice(null);
             startClearingTransition(async () => {
-              const response = await fetch("/api/settings/data", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  includeSettings: clearAllData
-                })
+              await clearPrivateAppData({
+                includeSettings: clearAllData
               });
-
-              const payload = (await response.json()) as { ok: boolean; error?: string };
-              if (!response.ok || payload.ok === false) {
-                setNotice(payload.error || "Could not clear data.");
-                return;
-              }
-
-              await clearPrivateAIConfig();
               setClearConfirm("");
               setClearAllData(false);
               if (clearAllData) {
@@ -298,13 +287,13 @@ export function AISettingsForm(props: Props) {
                 setClearApiKey(false);
                 setHasStoredApiKey(false);
               }
-              setNotice("Data cleared.");
+              setNotice("Local data cleared on this device.");
               router.refresh();
             });
           }}
           type="button"
         >
-          {isClearing ? "Clearing..." : "Clear data"}
+          {isClearing ? "Clearing..." : "Clear local data"}
         </button>
       </section>
     </form>

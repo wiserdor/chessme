@@ -149,7 +149,7 @@ export function ProfileBrowser(props: { activeUsername?: string | null; embedded
                 }}
               />
               <button className="btn-primary w-full sm:w-auto" disabled={isPending} type="submit">
-                {isPending ? "Opening..." : "Open username"}
+                {isPending ? "Searching..." : "Search"}
               </button>
             </div>
             <p className="text-xs text-muted">

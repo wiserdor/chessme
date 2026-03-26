@@ -60,8 +60,19 @@ export function ProfileSwitcher() {
     }
 
     void loadProfiles();
+    function onProfileStateUpdated() {
+      void loadProfiles();
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("private-profile-state-updated", onProfileStateUpdated);
+    }
+
     return () => {
       cancelled = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("private-profile-state-updated", onProfileStateUpdated);
+      }
     };
   }, [router]);
 
