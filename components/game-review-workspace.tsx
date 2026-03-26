@@ -201,15 +201,21 @@ export function GameReviewWorkspace(props: {
       <div className="surface-soft flex flex-wrap items-center justify-between gap-3 px-4 py-3 xl:hidden">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Review flow</p>
-          <p className="mt-1 text-sm text-muted-strong">Select a move, review the lesson, then ask the coach.</p>
+          <p className="mt-1 text-sm text-muted-strong">
+            {props.hasApiKey
+              ? "Select a move, review the lesson, then ask the coach."
+              : "Select a move and review the board, move list, and engine lesson."}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <a className="btn-secondary px-3 py-2 text-xs uppercase tracking-[0.12em]" href="#review-moves">
             Move list
           </a>
-          <a className="btn-primary px-3 py-2 text-xs uppercase tracking-[0.12em]" href="#review-coach">
-            Coach
-          </a>
+          {props.hasApiKey ? (
+            <a className="btn-primary px-3 py-2 text-xs uppercase tracking-[0.12em]" href="#review-coach">
+              Coach
+            </a>
+          ) : null}
         </div>
       </div>
 
@@ -313,8 +319,11 @@ export function GameReviewWorkspace(props: {
                     }}
                   />
                 ) : null}
-                <a className="btn-primary w-full px-3 py-2 text-xs uppercase tracking-[0.12em] sm:w-auto" href="#review-coach">
-                  Ask coach about this move
+                <a
+                  className="btn-primary w-full px-3 py-2 text-xs uppercase tracking-[0.12em] sm:w-auto"
+                  href={props.hasApiKey ? "#review-coach" : "/settings#ai-coach"}
+                >
+                  {props.hasApiKey ? "Ask coach about this move" : "Add AI coach"}
                 </a>
                 <a className="btn-secondary w-full px-3 py-2 text-xs uppercase tracking-[0.12em] sm:w-auto" href="#review-moves">
                   Browse moves
@@ -327,26 +336,37 @@ export function GameReviewWorkspace(props: {
         playerColor={props.playerColor}
       />
 
-      <GameCoachChat
-        gameId={props.gameId}
-        sectionId="review-coach"
-        hasApiKey={props.hasApiKey}
-        currentFocusPly={selectedPly}
-        onFocusPlyChange={setSelectedPly}
-        opening={props.opening ?? undefined}
-        focusLabel={focusLabel}
-        criticalMoments={displayCriticalMoments.slice(0, 8).map((moment) => ({
-          ply: moment.ply,
-          label: moment.label,
-          deltaCp: moment.deltaCp
-        }))}
-        initialMessages={props.initialMessages}
-        moveContexts={props.moves.map((move) => ({
-          ply: move.ply,
-          san: move.san,
-          fenAfter: move.fenAfter
-        }))}
-      />
+      {props.hasApiKey ? (
+        <GameCoachChat
+          gameId={props.gameId}
+          sectionId="review-coach"
+          hasApiKey={props.hasApiKey}
+          currentFocusPly={selectedPly}
+          onFocusPlyChange={setSelectedPly}
+          opening={props.opening ?? undefined}
+          focusLabel={focusLabel}
+          criticalMoments={displayCriticalMoments.slice(0, 8).map((moment) => ({
+            ply: moment.ply,
+            label: moment.label,
+            deltaCp: moment.deltaCp
+          }))}
+          initialMessages={props.initialMessages}
+          moveContexts={props.moves.map((move) => ({
+            ply: move.ply,
+            san: move.san,
+            fenAfter: move.fenAfter
+          }))}
+        />
+      ) : (
+        <section className="surface-card p-5">
+          <span className="badge">Replay only</span>
+          <h3 className="mt-3 font-display text-xl sm:text-2xl">Board and move review stay available without AI</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+            You can still navigate the full game, inspect critical moments, and review engine-backed lessons move by
+            move. Add a token in Settings only if you want coach chat and deeper explanations.
+          </p>
+        </section>
+      )}
 
       <NotesPanel
         title="Notes tied to this review"
