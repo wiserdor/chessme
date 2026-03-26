@@ -11,14 +11,16 @@ It is built for players who want more than a generic engine review. Instead of o
 
 ## What It Does
 
+- Open a real Chess.com profile by exact username
 - Import completed games from Chess.com by username
 - Upload PGN files as a fallback
-- Run local engine analysis on your games
+- Run Stockfish-backed engine analysis on your games
 - Detect recurring weaknesses such as tactical oversights, opening leaks, and endgame errors
 - Create training cards from your own critical positions
 - Add grounded AI coaching on top of engine facts
 - Let you chat with a coach about a game, move, leak, or recent trend
 - Save private notes tied to games, moves, openings, leaks, and coach answers
+- Save local profile shortcuts and switch between active profiles quickly
 
 ## Why It Is Different
 
@@ -35,12 +37,14 @@ ChessMe is designed around an improvement loop:
 
 ## Core Features
 
+- Dashboard control room for choosing a profile, syncing games, and launching analysis
 - Dashboard with recent games, favorites, weakness clusters, and training status
 - Game review page with board replay, critical moments, coach chat, and per-game notes
 - Leak pages with examples from your own games, practical fix guidance, and related drills
 - Coach Lab with blindspot map, recent trends, and style-focused AI coaching
 - Training queue built from your own mistakes instead of generic puzzle sets
 - Notes hub with search and contextual retrieval
+- Global active-profile switcher in the header
 - Light and dark theme support
 - Mobile-friendly responsive layout
 
@@ -65,26 +69,48 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Configuration
 
 - Chess.com import uses the public archives API
+- Profile lookup uses an exact public Chess.com username
 - AI provider, model, and token are managed in-app at `/settings`
-- API tokens are stored locally in SQLite, not committed to the repo
 - Core game analysis works without an AI token
 
 ## How AI Works
 
 - Without a token:
-  - ChessMe still analyzes games locally with Stockfish
+  - ChessMe still analyzes games with Stockfish-backed engine review
   - Coaching falls back to a deterministic local provider
 - With a token:
   - You unlock deeper coach chat, leak explanations, and style reports
   - AI is used to explain engine-backed facts, not replace the engine
 
+## Public vs Private Data
+
+ChessMe uses a hybrid storage model:
+
+- Public/server data:
+  - profiles
+  - imported games
+  - engine analysis
+  - weakness patterns
+  - training card templates
+- Private/local browser data:
+  - OpenAI token and AI settings
+  - notes
+  - favorites and saved profiles
+  - coach chat history
+  - private AI reviews, reports, and leak explanations
+  - local training progress
+
+This means the factual chess workspace can be hosted publicly, while your personal coaching layer stays on your device.
+
 ## Privacy
 
-- Local database files are stored under `./data`
+- Public server data is stored in the app database under `./data`
+- Private personal data is stored in the browser on the current device
+- Active profile selection is browser-local and not shared globally
 - `.env.local` and runtime data are gitignored
 - If AI credentials are missing or an AI call fails, the app falls back to deterministic summaries
 - If Stockfish is unavailable, the app falls back to a simple material-based evaluator so the pipeline remains usable
 
 ## Status
 
-This project is currently optimized for a single-user personal workflow and is evolving toward a stronger coach-first training experience.
+This project is currently optimized for a coach-first personal workflow, with public chess data on the server and private coaching data kept locally on-device.
