@@ -14,6 +14,8 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
 const sqlite = new Database(databasePath);
 sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("busy_timeout = 15000");
+sqlite.pragma("synchronous = NORMAL");
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS leak_example_notes (
