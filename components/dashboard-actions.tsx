@@ -548,8 +548,9 @@ export function DashboardActions(props: {
           <h2 className="panel-title mt-3">Start here: choose a profile, sync games, then analyze them</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
             If someone opens the app for the first time, this is the full path: pick the Chess.com profile you want to
-            work on, sync a date range, then analyze a first batch of games. Start with 10 analyzed games, then raise
-            it to 20 or 30 when you want a bigger review pass.
+            work on, sync a date range, then analyze a first batch of games. Sync can pull every game in the selected
+            range. Analysis is capped per run, so start with 10 analyzed games, then raise it to 20 or 30 when you
+            want a bigger review pass.
           </p>
         </div>
         <div className="surface-soft px-4 py-3 text-sm text-muted-strong">
@@ -569,16 +570,18 @@ export function DashboardActions(props: {
         </div>
         <div className="tone-neutral p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Step 2</p>
-          <p className="mt-2 text-sm font-semibold">Sync a manageable date range first</p>
+          <p className="mt-2 text-sm font-semibold">Sync the full range you want to work with</p>
           <p className="mt-2 text-sm leading-6 text-muted-strong">
-            Start with the last 3 to 12 months so the import stays fast and easier to review.
+            Sync can import everything in the date range you choose. Start with the last 3 to 12 months if you want a
+            faster first pass.
           </p>
         </div>
         <div className="tone-warning p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Step 3</p>
-          <p className="mt-2 text-sm font-semibold">Analyze 10 games to get the first real leaks</p>
+          <p className="mt-2 text-sm font-semibold">Analyze 10 games first to get the first real leaks</p>
           <p className="mt-2 text-sm leading-6 text-muted-strong">
-            Ten games is usually enough to surface meaningful patterns without creating a long first queue.
+            Analysis runs are capped at 30 games at a time. Ten games is usually enough to surface meaningful patterns
+            without creating a long first queue.
           </p>
         </div>
       </div>
@@ -651,8 +654,8 @@ export function DashboardActions(props: {
         >
           <h3 className="font-display text-xl">Step 2: Sync + Analyze</h3>
           <p className="mt-2 text-sm text-muted">
-            Fetch games for the active Chess.com profile, then analyze the first batch you choose below. Public engine
-            analysis stays on the server. Private AI coaching can happen later on this device.
+            Fetch all games in the date range for the active Chess.com profile, then analyze the first batch you choose
+            below. Public engine analysis stays on the server. Private AI coaching can happen later on this device.
           </p>
           <div className="mt-4 grid gap-3">
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="analyze-limit">
@@ -668,7 +671,7 @@ export function DashboardActions(props: {
                 value={analyzeLimit}
                 onChange={(event) => setAnalyzeLimit(event.target.value)}
               />
-              <p className="text-xs text-muted">Default 10, maximum 30 games per run.</p>
+              <p className="text-xs text-muted">Default 10. Analysis is capped at 30 games per run.</p>
             </div>
 
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-muted" htmlFor="sync-preset">
@@ -726,7 +729,8 @@ export function DashboardActions(props: {
               }}
             />
             <p className="text-xs text-muted">
-              Sent to API as `YYYY/MM`. Select "All available" to sync every published archive month.
+              Sent to API as `YYYY/MM`. Select "All available" to sync every published archive month. Sync is not
+              limited to 30 games.
             </p>
             {!props.activeUsername ? (
               <p className="rounded-[18px] border border-dashed border-[color:var(--border)] px-4 py-3 text-sm text-muted-strong">
@@ -766,7 +770,8 @@ export function DashboardActions(props: {
           >
             <h3 className="font-display text-xl">Analyze existing games</h3>
             <p className="mt-2 text-sm text-muted">
-              Use this when you already synced the profile and just want to analyze the next pending batch.
+              Use this when you already synced the profile and just want to analyze the next pending batch, up to 30
+              games in one run.
             </p>
             <p className="mt-2 text-xs text-muted">
               If your local OpenAI token is saved, ChatGPT coaching will start automatically after the engine pass
