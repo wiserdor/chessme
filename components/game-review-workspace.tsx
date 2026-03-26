@@ -112,6 +112,7 @@ function buildDeterministicLesson(input: {
 
 export function GameReviewWorkspace(props: {
   gameId: string;
+  profileUsername?: string;
   opening?: string | null;
   hasApiKey: boolean;
   moves: MoveRow[];
@@ -129,7 +130,7 @@ export function GameReviewWorkspace(props: {
     let cancelled = false;
 
     async function loadLocalReview() {
-      const profileUsername = getStoredActiveProfile() ?? "default";
+      const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
       const review = await getPrivateGameAIReview(profileUsername, props.gameId);
       if (cancelled) {
         return;
@@ -165,7 +166,7 @@ export function GameReviewWorkspace(props: {
       cancelled = true;
       window.removeEventListener("private-game-review-updated", reload);
     };
-  }, [props.criticalMoments, props.gameId]);
+  }, [props.criticalMoments, props.gameId, props.profileUsername]);
 
   const focusLabel = useMemo(() => {
     const selectedMove = props.moves.find((move) => move.ply === selectedPly);
@@ -339,6 +340,7 @@ export function GameReviewWorkspace(props: {
       {props.hasApiKey ? (
         <GameCoachChat
           gameId={props.gameId}
+          profileUsername={props.profileUsername}
           sectionId="review-coach"
           hasApiKey={props.hasApiKey}
           currentFocusPly={selectedPly}
@@ -372,6 +374,7 @@ export function GameReviewWorkspace(props: {
         title="Notes tied to this review"
         description="Your saved notes follow the current game context, including the selected move and matching opening notes."
         emptyMessage="No notes saved for this game or opening yet."
+        profileUsername={props.profileUsername}
         searches={[
           ...(selectedMove
             ? [

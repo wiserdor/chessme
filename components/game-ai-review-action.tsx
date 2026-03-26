@@ -13,6 +13,7 @@ import {
 
 export function GameAIReviewAction(props: {
   gameId: string;
+  profileUsername?: string;
   hasAIReview: boolean;
   analysisStatus: string;
   hasApiKey: boolean;
@@ -28,7 +29,7 @@ export function GameAIReviewAction(props: {
     let cancelled = false;
 
     async function loadLocalState() {
-      const profileUsername = getStoredActiveProfile() ?? "default";
+      const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
       const [config, cachedReview] = await Promise.all([
         getPrivateAIConfig(),
         getPrivateGameAIReview(profileUsername, props.gameId)
@@ -58,7 +59,7 @@ export function GameAIReviewAction(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.gameId, props.hasApiKey]);
+  }, [props.gameId, props.hasApiKey, props.profileUsername]);
 
   const isBlocked = props.analysisStatus !== "analyzed" || !hasLocalApiKey;
   const label = hasCompletedReview
@@ -94,7 +95,7 @@ export function GameAIReviewAction(props: {
           onClick={() => {
             setNotice(null);
             startTransition(async () => {
-              const profileUsername = getStoredActiveProfile() ?? "default";
+              const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
               if (!settings?.apiKey) {
                 setNotice("Add your OpenAI token in Settings before using ChatGPT on games.");
                 return;

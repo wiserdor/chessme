@@ -35,6 +35,7 @@ const SUGGESTIONS = [
 
 export function GameCoachChat(props: {
   gameId: string;
+  profileUsername?: string;
   opening?: string;
   hasApiKey: boolean;
   currentFocusPly?: number;
@@ -92,7 +93,7 @@ export function GameCoachChat(props: {
     let cancelled = false;
 
     async function loadLocalState() {
-      const profileUsername = getStoredActiveProfile() ?? "default";
+      const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
       const [config, storedMessages] = await Promise.all([
         getPrivateAIConfig(),
         getCoachMessages(profileUsername, props.gameId)
@@ -133,7 +134,7 @@ export function GameCoachChat(props: {
       cancelled = true;
       window.removeEventListener("private-game-review-updated", reloadMessages);
     };
-  }, [props.gameId, props.hasApiKey]);
+  }, [props.gameId, props.hasApiKey, props.profileUsername]);
 
   function updateFocusPly(next: number | undefined) {
     const value = typeof next === "number" ? next : "";
@@ -168,7 +169,7 @@ export function GameCoachChat(props: {
       setQuestion("");
 
       try {
-        const profileUsername = getStoredActiveProfile() ?? "default";
+        const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
         const relevantNotes = await searchPrivateNotes(profileUsername, {
           gameId: props.gameId,
           ...(typeof focusPly === "number" ? { ply: focusPly } : {}),
@@ -333,7 +334,7 @@ export function GameCoachChat(props: {
                         buttonClassName="btn-ghost px-3 py-2 text-[11px] uppercase tracking-[0.12em]"
                         dialogTitle="Save coach answer as note"
                         initialBody={message.content}
-                        profileUsername={getStoredActiveProfile() ?? "default"}
+                        profileUsername={props.profileUsername ?? getStoredActiveProfile() ?? "default"}
                         context={{
                           anchorType: typeof message.focusPly === "number" ? "move" : "game",
                           anchorLabel:

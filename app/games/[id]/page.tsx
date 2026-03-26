@@ -135,6 +135,7 @@ export default async function GamePage(props: {
               <FavoriteGameButton gameId={detail.game.id} initialFavorite={Boolean(detail.game.isFavorite)} />
               <GameAIReviewAction
                 gameId={detail.game.id}
+                profileUsername={detail.game.profileUsername}
                 hasAIReview={detail.review?.coachSource === "openai"}
                 analysisStatus={detail.game.analysisStatus}
                 hasApiKey={aiSettings.hasApiKey}
@@ -145,6 +146,7 @@ export default async function GamePage(props: {
 
         <GamePrivateReviewPanels
           gameId={detail.game.id}
+          profileUsername={detail.game.profileUsername}
           initialReview={
             detail.review
               ? {
@@ -257,6 +259,7 @@ export default async function GamePage(props: {
         </div>
         <GameReviewWorkspace
           gameId={detail.game.id}
+          profileUsername={detail.game.profileUsername}
           opening={detail.game.opening}
           moves={detail.positions}
           criticalMoments={criticalMoments}

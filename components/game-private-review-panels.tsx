@@ -16,6 +16,7 @@ type ReviewView = {
 
 export function GamePrivateReviewPanels(props: {
   gameId: string;
+  profileUsername?: string;
   initialReview: ReviewView | null;
 }) {
   const [review, setReview] = useState<ReviewView | null>(props.initialReview);
@@ -24,7 +25,7 @@ export function GamePrivateReviewPanels(props: {
     let cancelled = false;
 
     async function loadLocalReview() {
-      const profileUsername = getStoredActiveProfile() ?? "default";
+      const profileUsername = props.profileUsername ?? getStoredActiveProfile() ?? "default";
       const localReview = await getPrivateGameAIReview(profileUsername, props.gameId);
       if (cancelled) {
         return;
@@ -49,7 +50,7 @@ export function GamePrivateReviewPanels(props: {
       cancelled = true;
       window.removeEventListener("private-game-review-updated", reload);
     };
-  }, [props.gameId, props.initialReview]);
+  }, [props.gameId, props.initialReview, props.profileUsername]);
 
   if (!review) {
     return <p className="surface-soft p-5 text-sm text-muted-strong">Run analysis to generate a review.</p>;
